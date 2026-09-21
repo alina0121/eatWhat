@@ -1,0 +1,29 @@
+{
+  "name": "吃啥好呀",
+  "appid": "",
+  "description": "解决每天不知道吃啥：菜谱+餐厅组合推荐与执行管理",
+  "versionName": "1.0.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3
+  },
+  "h5": {
+    "title": "吃啥好呀",
+    "router": {
+      "mode": "hash",
+      "base": "/"
+    }
+  },
+  "mp-weixin": {
+    "appid": "touristappid",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true
+    },
+    "usingComponents": true
+  }
+}

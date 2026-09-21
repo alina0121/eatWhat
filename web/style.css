@@ -1,0 +1,185 @@
+/* ------------------------------------------------------------------
+   吃啥 · 第一版 UI 样式基准
+   ------------------------------------------------------------------ */
+:root{
+  --brand:#4b3fe3;        /* 品牌紫 */
+  --brand-light:#e5e3fb;  /* 浅紫底 */
+  --surface:#f6f6fb;      /* 页面底 */
+  --card:#ffffff;         /* 卡片 */
+  --border:#ececf3;       /* 描边 */
+  --text:#1f1f2a;         /* 主文字 */
+  --text-sub:#8a8aa0;     /* 次要文字 */
+  --danger:#e5484d;       /* 危险/删除 */
+  --warning:#ff9800;      /* 临期橙 */
+  --ok:#2fb96e;           /* 充足绿 */
+  --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--surface);color:var(--text);font-size:15px;
+}
+/* 内屏固定高度 + 内容区内滚，底部 tab 恒定，不随内容抖屏 */
+.app{height:100dvh;display:flex;flex-direction:column;margin:0 auto;max-width:480px}
+
+.screen{flex:1;overflow-y:auto;padding:16px 14px 90px}
+
+h2.title{font-size:20px;font-weight:700;margin:6px 0 12px;display:flex;align-items:center;gap:8px}
+.title .spacer{flex:1}
+.title small{color:var(--text-sub);font-weight:400;font-size:13px}
+
+/* TCP 页面容器 */
+.section-title{font-size:14px;font-weight:700;color:var(--text);margin:18px 0 8px}
+
+/* 卡片 */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px;margin-bottom:10px}
+.card-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.card-row .emo{font-size:22px}
+.card .name{font-weight:600}
+.card .sub{color:var(--text-sub);font-size:12px;margin-top:2px}
+
+/* 徽章 */
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;line-height:1.6}
+.badge.purple{background:var(--brand-light);color:var(--brand)}   /* 菜谱 */
+.badge.orange{background:#fff0e0;color:#e8890c}                   /* 餐厅 */
+.badge.gray{background:#f1f1f6;color:var(--text-sub)}
+
+/* 状态 pill（在库/待买/临期） */
+.pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:12px}
+.pill.ok{    background:#e6f6ee;color:var(--ok)}
+.pill.warn{  background:#fff4e0;color:#e8890c}
+.pill.bad{   background:#fdecec;color:var(--danger)}
+.pill.dim{   background:#f1f1f6;color:var(--text-sub)}
+
+/* 按钮 */
+.pbtn{display:inline-flex;align-items:center;gap:4px;border:none;border-radius:20px;
+  padding:5px 12px;font-size:13px;cursor:pointer;font-weight:600;transition:.15s}
+.pbtn:active{transform:scale(.96)}
+.pbtn.brand{background:var(--brand);color:#fff}
+.pbtn.ghost{background:#f1f1f6;color:var(--text)}
+.pbtn.danger{background:#fdecec;color:var(--danger)}
+.pbtn.on{background:var(--brand-light);color:var(--brand)}
+.pbtn:disabled{opacity:.45;cursor:not-allowed}
+.pbtn.sm{padding:3px 9px;font-size:12px}
+
+/* 类型徽章 + 候选按钮组合 */
+.type-badge{display:inline-block;width:44px;height:44px;border-radius:12px;text-align:center;
+  line-height:44px;font-size:20px;flex:none}
+.cand{flex:none}
+.cand.on{background:var(--brand-light);color:var(--brand)}
+
+/* 横向滑动标签 */
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:5px 14px;border-radius:20px;border:1px solid var(--border);
+  background:var(--card);color:var(--text-sub);cursor:pointer;font-size:13px}
+.chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+
+/* 吃这些候选行 */
+.inbox-src{flex:1;min-width:0}
+.timerrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+/* 底部导航 */
+.navbar{flex:none;display:flex;border-top:1px solid var(--border);background:var(--card)}
+.navbar button{flex:1;padding:10px 0 12px;border:none;background:none;cursor:pointer;
+  font-size:13px;color:var(--text-sub);display:flex;flex-direction:column;align-items:center;gap:2px}
+.navbar button .ico{font-size:20px}
+.navbar button.on{color:var(--brand);font-weight:600}
+
+/* 双行在库布局 */
+.line2{font-size:12px;color:var(--text-sub);margin-top:4px;display:flex;gap:6px;align-items:center;
+  flex-wrap:wrap}
+
+/* 表单 */
+.form label{display:block;font-size:12px;color:var(--text-sub);margin:10px 0 4px}
+.form input,.form select,.form textarea{width:100%;padding:9px 10px;border:1px solid var(--border);
+  border-radius:10px;font-size:14px;background:#fff;outline:none}
+.form input:focus,.form select:focus{border-color:var(--brand)}
+.ing-row{display:flex;gap:6px;margin-top:6px}
+.ing-row input{flex:1}
+
+/* 模态 */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal.open{display:flex}
+.modal-box{background:var(--card);border-radius:16px;padding:18px;width:100%;max-width:420px;max-height:88vh;overflow-y:auto}
+.modal-title{font-size:17px;font-weight:700;margin-bottom:6px}
+.rowbtns{display:flex;gap:8px;align-items:center}
+
+.placeholder-info{color:var(--text-sub);background:var(--card);border:1px dashed var(--border);
+  border-radius:12px;padding:18px;text-align:center;font-size:13px;margin-top:8px}
+.empty{color:var(--text-sub);text-align:center;padding:20px;font-size:13px}
+
+/* ================= 推荐页（对齐第一版设计） ================= */
+.topbar{display:flex;align-items:center;gap:10px;padding:6px 2px 12px}
+.topbar .brand{font-size:19px;font-weight:700;color:var(--brand)}
+.back{background:none;border:none;font-size:24px;color:var(--brand);cursor:pointer;line-height:1}
+.ptit{font-weight:700;font-size:17px}
+.link{color:var(--brand);cursor:pointer;font-size:13px;font-weight:600}
+.t-13{font-size:13px;color:var(--text-sub)}
+/* Hero 转盘（渐变横幅 + 骰子 + 按钮） */
+.hero{background:linear-gradient(135deg,#4b3fe3,#6f6fff);color:#fff;border-radius:20px;padding:22px 18px;text-align:center;margin-bottom:4px}
+.hero .lab{font-size:13px;opacity:.85}
+.dice{width:78px;height:78px;border-radius:50%;background:rgba(255,255,255,.18);margin:14px auto;display:flex;
+  align-items:center;justify-content:center;font-size:38px;border:1.5px dashed rgba(255,255,255,.55)}
+.hero .btn{background:#fff;color:var(--brand);font-weight:600;font-size:15px;border-radius:999px;padding:10px 24px;
+  border:none;cursor:pointer;box-shadow:0 8px 18px rgba(0,0,0,.14)}
+.hero .sub{font-size:11px;opacity:.75;margin-top:9px}
+/* 小节标题 */
+.sec-tit{font-size:15px;font-weight:700;margin:18px 0 10px;display:flex;align-items:center;justify-content:space-between}
+/* 横向可滑动的标签行（不换行，溢出可左右滑） */
+.chiprow{display:flex;gap:8px;overflow-x:auto;white-space:nowrap;padding:2px 1px 8px;scrollbar-width:none}
+.chiprow::-webkit-scrollbar{display:none}
+.chiprow .chip{flex:0 0 auto}
+/* 为您推荐列表 + 菜谱渐变封面 */
+.rec-list{display:flex;flex-direction:column;gap:10px}
+.rec-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center}
+.cover{width:62px;height:62px;border-radius:12px;flex:0 0 62px;display:flex;align-items:center;justify-content:center;font-size:30px}
+.k1{background:linear-gradient(135deg,#ffd08a,#ffb25e)}
+.k2{background:linear-gradient(135deg,#9fe0b0,#6fcb8e)}
+.k3{background:linear-gradient(135deg,#ffb3b3,#f87c7c)}
+.k4{background:linear-gradient(135deg,#a9aeff,#6f6fff)}
+.c-name{font-size:15px;font-weight:600}
+.c-meta{font-size:12px;color:var(--text-sub);margin-top:3px}
+.tags{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.tg{font-size:11px;color:var(--brand);background:var(--brand-light);border-radius:6px;padding:2px 7px}
+.tg.g{color:#0f766e;background:#e6f6f3}
+/* 为您推荐 · 餐厅行 */
+.shop{display:flex;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:11px;margin-bottom:10px;align-items:center}
+.shop .em{width:44px;height:44px;border-radius:11px;background:var(--brand-light);display:flex;align-items:center;
+  justify-content:center;font-size:22px;flex:0 0 44px}
+.shop .sn{font-size:14px;font-weight:600}
+.shop .sm{font-size:11px;color:var(--text-sub);margin-top:3px}
+/* 转盘独立结果页 */
+.result-hero{text-align:center;padding:20px 0 14px}
+.wheel{width:184px;height:184px;margin:8px auto;border-radius:50%;background:conic-gradient(#6f6fff,#a9aeff,#6f6fff);
+  display:flex;align-items:center;justify-content:center}
+.wheel .inner{width:142px;height:142px;border-radius:50%;background:var(--card);display:flex;align-items:center;
+  justify-content:center;font-size:62px;box-shadow:inset 0 0 0 6px var(--brand-light)}
+.result-tit{font-size:20px;font-weight:700;margin-top:4px}
+.result-sub{font-size:13px;color:var(--text-sub);margin-top:5px}
+.tbadge{font-size:11px;padding:3px 9px;border-radius:999px}
+.tbadge.my{background:#e6f6f3;color:#0f766e}
+.tbadge.ref{background:var(--brand-light);color:var(--brand)}
+.actions{display:flex;flex-direction:column;gap:9px;margin-top:6px}
+.actions.row{flex-direction:row}
+.pbtn.primary{background:var(--brand);color:#fff}
+.pbtn:disabled{opacity:.6;cursor:default}
+.pbtn.on{background:var(--surface);color:var(--text-sub);border:1px solid var(--border)}
+
+/* ================= 菜谱页：吃这些 两行候选卡 + 计时按钮 ================= */
+.eat-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);
+  border-radius:12px;padding:10px 11px;margin-bottom:8px}
+.eat-row .dx{width:40px;height:40px;border-radius:10px;background:var(--brand-light);display:flex;align-items:center;
+  justify-content:center;font-size:20px;flex:0 0 40px}
+.eat-row .tl-col{flex:1;min-width:0}
+.eat-row .tl-top{display:flex;align-items:center;gap:8px}
+.eat-row .tl-top .in{font-size:14px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eat-row .tl-bot{display:flex;align-items:center;margin-top:8px;gap:6px;flex-wrap:wrap}
+.tbtn{font-size:11px;color:var(--text-sub);background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:4px 9px;cursor:pointer;white-space:nowrap}
+.tbtn.on{color:#fff;background:var(--brand);border-color:var(--brand)}
+.rtime{font-weight:700;color:var(--brand);font-variant-numeric:tabular-nums;margin:0 6px 0 0}
+.rtime.muted{color:var(--text-sub)}
+.rm-btn{font-style:normal;color:var(--danger);cursor:pointer;margin-left:auto;opacity:.7;font-size:15px;flex:none}

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>吃啥</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app">
+  <!-- 页面内容区 -->
+  <main class="screen" id="page"></main>
+
+  <!-- 底部 5 Tab（恒定） -->
+  <nav class="navbar" id="nav">
+    <button data-tab="recommend" class="on"><span class="ico">🎡</span>推荐</button>
+    <button data-tab="recipes"><span class="ico">🍳</span>菜谱</button>
+    <button data-tab="fridge"><span class="ico">🧊</span>冰箱</button>
+    <button data-tab="shops"><span class="ico">🏪</span>餐厅</button>
+    <button data-tab="me"><span class="ico">👤</span>我的</button>
+  </nav>
+</div>
+
+<!-- 新建/编辑菜谱弹窗 -->
+<div class="modal" id="recipeModal">
+  <div class="modal-box">
+    <div class="modal-title" id="recipeModalTitle">新建菜谱</div>
+    <div class="form">
+      <label>名称</label><input id="rp_name">
+      <label>表情</label><input id="rp_em" value="🍽">
+      <div class="rowbtns">
+        <div style="flex:1"><label>用时(分)</label><input id="rp_time" type="number" value="20"></div>
+        <div style="flex:1"><label>难度</label>
+          <select id="rp_diff"><option>简单</option><option>一般</option><option>较难</option></select>
+        </div>
+      </div>
+      <label>标签（逗号分隔，如 辣、下饭）</label><input id="rp_tags">
+      <label>食材</label>
+      <div id="rp_ings"></div>
+      <button type="button" class="pbtn ghost" id="rp_add_ing" style="margin-top:8px">＋ 食材</button>
+      <label>步骤（每行一步）</label>
+      <textarea id="rp_steps" rows="4"></textarea>
+      <div class="rowbtns" style="margin-top:14px">
+        <button class="pbtn brand" style="flex:1" id="rp_save">保存</button>
+        <button class="pbtn ghost" id="rp_cancel">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+
+<!-- 干饭成员编辑弹窗 -->
+<div class="modal" id="dinerModal">
+  <div class="modal-box">
+    <div class="modal-title">干饭成员</div>
+    <div class="form">
+      <label>姓名</label><input id="dn_name">
+      <label>口味偏好（逗号分隔，如 辣、不吃香菜、微辣）</label><input id="dn_tags">
+      <div class="rowbtns" style="margin-top:14px">
+        <button class="pbtn brand" style="flex:1" onclick="saveDiner()">保存</button>
+        <button class="pbtn ghost" onclick="closeDinerModal()">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 厨房技巧新增/编辑弹窗 -->
+<div class="modal" id="tipModal">
+  <div class="modal-box">
+    <div class="modal-title" id="tipModalTitle">＋ 我来加</div>
+    <div class="form">
+      <label>标题</label><input id="tp_title">
+      <label>分类</label>
+      <select id="tp_cat"><option>其他</option><option>烹饪</option><option>食材</option><option>刀工</option><option>保存</option></select>
+      <label>内容</label><textarea id="tp_content" rows="4"></textarea>
+      <label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="tp_pub" checked style="width:auto"> 公开（审核通过后所有人可见）
+      </label>
+      <div class="rowbtns" style="margin-top:14px">
+        <button class="pbtn brand" style="flex:1" onclick="saveTip()">提交</button>
+        <button class="pbtn ghost" onclick="closeTipModal()">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
