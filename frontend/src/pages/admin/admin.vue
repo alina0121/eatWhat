@@ -1,7 +1,7 @@
 <!-- admin.vue —— 吃啥 · PC 管理端（桌面宽屏：左侧菜单 + 右侧内容区）
-  复用现有移动端页面同一套 API（tipApi/recipeApi/coverApi/ingredientApi/catApi/shopApi/configApi），
-  不改任何后端。入口在「我的」页仅 PC 宽屏显示，移动端不可见、原 tab 页完全不受影响。
-  管理员身份沿用 eat_admin 本地开关（MVP 演示语义）。
+  复用现有移动端同一套 API（tipApi/recipeApi/coverApi/ingredientApi/catApi/shopApi/configApi），
+  并新增 adminApi（密码登录 + 统计聚合）。入口在「我的」页仅 PC 宽屏显示，移动端不可见。
+  登录口令在配置表 admin_passcode（默认 123456），仅门控管理台，不影响移动端。
 -->
 <template>
   <view class="admin">
@@ -10,19 +10,20 @@
       <text class="ah-l">🍜 吃啥 · 管理端</text>
       <view class="ah-r">
         <text class="ah-user">{{ curName }}</text>
-        <view class="ah-role" :class="{ off: !isAdmin }">管理员</view>
+        <view class="ah-role" :class="{ off: !isAdmin }">{{ isAdmin ? '管理员' : '未登录' }}</view>
         <text class="ah-back" @tap="back">‹ 返回 App</text>
       </view>
     </view>
 
-    <!-- 权限门：非管理员提示开启 -->
+    <!-- 登录门：密码登录（默认口令 123456，存配置表，改库可换） -->
     <view class="gate" v-if="!isAdmin">
       <text class="gate-ic">🔒</text>
-      <text class="gate-t">当前未开启管理员权限，管理端功能仅在「管理员」模式下可用</text>
-      <view class="gate-row">
-        <text class="gate-lbl">开启管理员（演示）</text>
-        <switch :checked="isAdmin" @change="toggleGate" />
+      <text class="gate-t">管理端功能需输入管理员口令</text>
+      <input class="gate-in" v-model="loginCode" password placeholder="请输入口令" style="text-align:center" />
+      <view class="gate-act">
+        <button class="pbtn" @click="doLogin">登 录</button>
       </view>
+      <text class="gate-hint">提示：默认口令 123456（后台配置 admin_passcode）</text>
     </view>
 
     <view class="abody" v-if="isAdmin">
@@ -36,11 +37,54 @@
 
       <!-- 右侧内容区 -->
       <view class="acont">
+        <!-- ============ 0. 统计仪表盘 ============ -->
+        <template v-if="sec === 'stats'">
+          <view class="sec-h"><text class="sh-t">统计仪表盘</text><text class="sh-s">数据实时现算，仅作参考</text></view>
+          <view class="kpis">
+            <view class="kpi card" v-for="k in kpis" :key="k.ic">
+              <text class="kpi-ic">{{ k.ic }}</text>
+              <text class="kpi-num">{{ k.k }}</text>
+              <text class="kpi-t">{{ k.t }}</text>
+            </view>
+          </view>
+          <view class="dash2">
+            <!-- 本月干饭分布 -->
+            <view class="panel card">
+              <text class="panel-t">📊 本月干饭分布 <text class="sh-s">{{ stats.monthly.month }}</text></text>
+              <view class="hbar" v-for="d in monthlyDist" :key="d.label">
+                <text class="hbar-lbl">{{ d.label }}</text>
+                <view class="hbar-track"><view class="hbar-fill" :style="{ width: d.w + '%' }"></view></view>
+                <text class="hbar-num">{{ d.count }}</text>
+              </view>
+              <text class="none2" v-if="!monthlyDist.length">本月还没有干饭记录</text>
+            </view>
+            <!-- 体重趋势 -->
+            <view class="panel card">
+              <text class="panel-t">⚖️ 体重趋势（最近 {{ weightTrend.length }} 次）</text>
+              <view class="wchart">
+                <view class="wcol" v-for="w in weightTrend" :key="w.date">
+                  <view class="wbar" :style="{ height: w.h + 'px' }"></view>
+                  <text class="wnum">{{ w.weight }}</text>
+                  <text class="wdate">{{ w.date.slice(5) }}</text>
+                </view>
+              </view>
+              <text class="none2" v-if="!weightTrend.length">还没有体重记录</text>
+            </view>
+          </view>
+        </template>
+
         <!-- ============ 1. 厨房技巧审核 ============ -->
         <template v-if="sec === 'tips'">
           <view class="sec-h"><text class="sh-t">厨房技巧审核</text><text class="sh-s">对待审核内容「通过 / 退回」</text></view>
+          <view class="fbar">
+            <input class="fsearch" v-model="tipQ" placeholder="搜索标题 / 内容…" />
+            <view class="seg">
+              <text v-for="s in tipSts" :key="s.k" class="sell" :class="{ on: tipSt === s.k }" @click="tipSt = s.k">{{ s.t }}</text>
+            </view>
+            <text class="fcount">共 {{ filterTips.length }} 条</text>
+          </view>
           <view class="tips">
-            <view class="trow card" v-for="t in tips" :key="t.id">
+            <view class="trow card" v-for="t in shownTips" :key="t.id">
               <view class="trow-head">
                 <text class="tt">{{ t.title }}</text>
                 <text class="tst" :class="t.status">{{ statusText(t.status) }}</text>
@@ -55,7 +99,8 @@
                 <button class="pbtn danger" @click="reject(t)">✕ 退回</button>
               </view>
             </view>
-            <text class="none" v-if="!tips.length">暂无可审核的技巧</text>
+            <text class="none" v-if="!filterTips.length">暂无可审核的技巧</text>
+            <button class="pbtn ghost more" v-if="filterTips.length > shownTips.length" @click="tipLimit += 20">加载更多（{{ shownTips.length }}/{{ filterTips.length }}）</button>
           </view>
         </template>
 
@@ -64,16 +109,25 @@
           <view class="sec-h">
             <text class="sh-t">参考菜谱</text>
             <view class="sec-act">
-              <text class="sh-note">参考菜谱仅可录入，不可编辑/删除</text>
+              <text class="sh-note">可录入 / 编辑 / 删除</text>
               <button class="pbtn" @click="openModal('ref')">＋ 录入</button>
             </view>
           </view>
+          <view class="fbar">
+            <input class="fsearch" v-model="refQ" placeholder="按菜名搜索…" />
+            <text class="fcount">共 {{ filterRefs.length }} 条</text>
+          </view>
           <view class="grid">
-            <view class="rcard" v-for="r in refs" :key="r.id">
+            <view class="rcard" v-for="r in shownRefs" :key="r.id">
               <view class="rcover" :style="{ background: r.coverGrad || DEFAULT_GRAD }"><text class="rem">{{ r.em }}</text></view>
               <view class="rinfo"><text class="rn">{{ r.name }}</text><text class="rm">{{ r.time }}分钟 · {{ r.diff }}</text></view>
+              <view class="raction">
+                <button class="pbtn ghost" @click="editRef(r)">✎ 编辑</button>
+                <button class="pbtn danger" @click="delRef(r)">✕ 删除</button>
+              </view>
             </view>
-            <text class="none" v-if="!refs.length">还没有参考菜谱</text>
+            <text class="none" v-if="!filterRefs.length">还没有参考菜谱</text>
+            <button class="pbtn ghost more" v-if="filterRefs.length > shownRefs.length" @click="refLimit += 20">加载更多（{{ shownRefs.length }}/{{ filterRefs.length }}）</button>
           </view>
         </template>
 
@@ -107,6 +161,10 @@
             </view>
             <view class="sec-act"><button class="pbtn" @click="openIngAdd">＋ {{ ingTab === 'cat' ? '大类' : '新增' }}</button></view>
           </view>
+          <view class="fbar" v-if="ingTab === 'ing'">
+            <input class="fsearch" v-model="ingQ" placeholder="按食材名搜索…" />
+            <text class="fcount">共 {{ filterIngs.length }} 条</text>
+          </view>
           <!-- 食材 Tab -->
           <template v-if="ingTab === 'ing'">
             <view class="grp" v-for="g in ingGroups" :key="g.cat">
@@ -118,7 +176,7 @@
                 <button class="pbtn danger" @click="delIng(it)">✕</button>
               </view>
             </view>
-            <text class="none" v-if="!ingredients.length">食材库为空</text>
+            <text class="none" v-if="!filterIngs.length">食材库为空</text>
           </template>
           <!-- 大类 Tab -->
           <template v-else>
@@ -141,14 +199,21 @@
             <text class="sh-t">餐厅</text>
             <view class="sec-act"><button class="pbtn" @click="openShopAdd">＋ 收藏</button></view>
           </view>
-          <view class="row card" v-for="s in shops" :key="s.id">
-            <view class="sico">🏪</view>
-            <view class="sc"><text class="sn">{{ s.name }}</text><text class="sm">{{ s.type }} · {{ s.price || '—' }} · ⭐ {{ s.star || '新' }}</text></view>
-            <view class="sp"></view>
-            <button class="pbtn ghost" @click="editShop(s)">✎</button>
-            <button class="pbtn danger" @click="delShop(s)">✕</button>
+          <view class="fbar">
+            <input class="fsearch" v-model="shopQ" placeholder="按名称 / 类型搜索…" />
+            <text class="fcount">共 {{ filterShops.length }} 条</text>
           </view>
-          <text class="none" v-if="!shops.length">还没有收藏餐厅</text>
+          <view v-for="s in shownShops" :key="s.id">
+            <view class="row card">
+              <view class="sico">🏪</view>
+              <view class="sc"><text class="sn">{{ s.name }}</text><text class="sm">{{ s.type }} · {{ s.price || '—' }} · ⭐ {{ s.star || '新' }}</text></view>
+              <view class="sp"></view>
+              <button class="pbtn ghost" @click="editShop(s)">✎</button>
+              <button class="pbtn danger" @click="delShop(s)">✕</button>
+            </view>
+          </view>
+          <text class="none" v-if="!filterShops.length">还没有收藏餐厅</text>
+          <button class="pbtn ghost more" v-if="filterShops.length > shownShops.length" @click="shopLimit += 20">加载更多（{{ shownShops.length }}/{{ filterShops.length }}）</button>
         </template>
 
         <!-- ============ 6. 系统配置 ============ -->
@@ -165,6 +230,11 @@
               <view class="cfg-c"><text class="cfg-t">临期阈值（天）</text><text class="cfg-s">在库食材剩余≤该天数视为临期</text></view>
               <input class="num" type="number" :value="String(expiry)" @blur="setExpiry" />
             </view>
+            <view class="cfg-row">
+              <text class="cfg-ic">🔑</text>
+              <view class="cfg-c"><text class="cfg-t">管理员口令</text><text class="cfg-s">登录管理端使用，保存后立即生效</text></view>
+              <input class="num w160" :value="passcode" @blur="setPasscode" />
+            </view>
           </view>
         </template>
       </view>
@@ -173,9 +243,9 @@
     <!-- ============ 通用弹窗（自绘 mask；按 modal.mode 切换表单） ============ -->
     <view class="mask" v-if="modal.show" @click="closeModal">
       <view class="dialog" @click.stop>
-        <!-- 录入参考菜谱 -->
+        <!-- 录入 / 编辑参考菜谱 -->
         <template v-if="modal.mode === 'ref'">
-          <text class="d-title">录入参考菜谱</text>
+          <text class="d-title">{{ form.id ? '编辑参考菜谱' : '录入参考菜谱' }}</text>
           <input v-model="form.name" placeholder="菜名 *" class="di" />
           <view class="dl-row"><text class="dl-l">Emoji</text><input v-model="form.em" placeholder="🍲" class="di" /></view>
           <view class="dl-row"><text class="dl-l">耗时</text><input v-model.number="form.time" type="number" placeholder="分钟" class="di" /></view>
@@ -190,7 +260,7 @@
                 <view class="cover-box" :style="{ background: DEFAULT_GRAD }"><text class="cem">🍽</text></view>
                 <text class="cover-nm">默认</text>
               </view>
-              <view class="citem" v-for="c in covers" :key="c.id" :class="{ on: String(form.cover) === String(c.id) }" @click="form.cover = String(c.id)">
+              <view v-for="c in covers" :key="c.id" class="citem" :class="{ on: form.cover === String(c.id) }" @click="form.cover = String(c.id)">
                 <view class="cover-box" :style="{ background: c.grad }"><text class="cem">{{ c.emoji }}</text></view>
                 <text class="cover-nm">{{ c.name || c.id }}</text>
               </view>
@@ -249,7 +319,7 @@
 </template>
 
 <script>
-import { tipApi, recipeApi, coverApi, ingredientApi, catApi, shopApi, configApi } from '@/api'
+import { tipApi, recipeApi, coverApi, ingredientApi, catApi, shopApi, configApi, adminApi } from '@/api'
 
 const DEFAULT_GRAD = 'linear-gradient(135deg,#4b3fe3,#8b5cf6)'
 const grads = [
@@ -268,6 +338,7 @@ export default {
   data() {
     return {
       menus: [
+        { k: 'stats', ic: '📊', t: '统计' },
         { k: 'tips', ic: '👨‍🍳', t: '厨房技巧审核' },
         { k: 'ref', ic: '📚', t: '参考菜谱' },
         { k: 'covers', ic: '🖼️', t: '封面图库' },
@@ -276,21 +347,83 @@ export default {
         { k: 'config', ic: '⚙️', t: '系统配置' }
       ],
       DEFAULT_GRAD, grads, catIcons,
-      sec: 'tips', curName: '', isAdmin: false,
+      sec: 'stats', curName: '', isAdmin: false,
+      // 登录
+      loginCode: '', passcode: '',
+      // 统计
+      stats: { cards: {}, monthly: { dist: [] }, weight_trend: [] },
+      // 各列表数据
       tips: [], refs: [], covers: [], ingredients: [], cats: [], shops: [],
       audit: true, expiry: 3,
       ingTab: 'ing',
+      // 搜索 / 筛选 / 分页
+      tipQ: '', tipSt: 'all', tipLimit: 20, tipSts: [
+        { k: 'all', t: '全部' }, { k: 'pending', t: '待审核' }, { k: 'approved', t: '已公开' }, { k: 'rejected', t: '未通过' }
+      ],
+      refQ: '', refLimit: 20,
+      ingQ: '',
+      shopQ: '', shopLimit: 20,
       modal: { show: false, mode: '', id: null },
       form: {}
     }
   },
   computed: {
+    // 统计：计数卡片
+    kpis() {
+      const c = this.stats.cards || {}
+      return [
+        { ic: '🍲', t: '我的菜谱', k: c.recipes_my || 0 },
+        { ic: '📚', t: '参考菜谱', k: c.recipes_ref || 0 },
+        { ic: '🧺', t: '食材库', k: c.ingredients || 0 },
+        { ic: '🧊', t: '冰箱在库', k: c.fridge_in || 0 },
+        { ic: '🛒', t: '待采购', k: c.purchase || 0 },
+        { ic: '🏪', t: '餐厅', k: c.shops || 0 },
+        { ic: '👨‍🍳', t: '技巧待审', k: c.tips_pending || 0 },
+        { ic: '🍚', t: '干饭记录', k: c.records_total || 0 }
+      ]
+    },
+    // 本月干饭分布（宽条形比例）
+    monthlyDist() {
+      const d = this.stats.monthly?.dist || []
+      const mx = d.reduce((a, b) => Math.max(a, b.count || 0), 1)
+      return d.map((x) => ({ ...x, w: ((x.count || 0) / mx) * 100 }))
+    },
+    // 体重趋势（归一化柱高）
+    weightTrend() {
+      const t = (this.stats.weight_trend || []).slice()
+      if (!t.length) return []
+      const vals = t.map((x) => x.weight)
+      const mn = Math.min(...vals)
+      const span = (Math.max(...vals) - mn) || 1
+      return t.map((x) => ({ date: x.date, weight: x.weight, h: Math.round(38 + ((x.weight - mn) / span) * 82) }))
+    },
+    // 技巧：状态筛选 + 关键词
+    filterTips() {
+      const q = this.tipQ.trim().toLowerCase()
+      return this.tips.filter((t) => {
+        if (this.tipSt !== 'all' && t.status !== this.tipSt) return false
+        if (!q) return true
+        return String(t.title || '').toLowerCase().includes(q) || String(t.content || '').toLowerCase().includes(q)
+      })
+    },
+    shownTips() { return this.filterTips.slice(0, this.tipLimit) },
+    // 参考菜谱：关键词
+    filterRefs() {
+      const q = this.refQ.trim().toLowerCase()
+      return this.refs.filter((r) => !q || String(r.name || '').toLowerCase().includes(q))
+    },
+    shownRefs() { return this.filterRefs.slice(0, this.refLimit) },
+    // 食材：关键词
+    filterIngs() {
+      const q = this.ingQ.trim().toLowerCase()
+      return this.ingredients.filter((x) => !q || String(x.name || '').toLowerCase().includes(q))
+    },
     // 食材按大类分组（顺序跟随大类编排）
     ingGroups() {
       const catsOrder = {}
       this.cats.forEach((c) => { catsOrder[c.name] = true })
       const byCat = {}
-      this.ingredients.forEach((it) => { (byCat[it.cat] = byCat[it.cat] || []).push(it) })
+      this.filterIngs.forEach((it) => { (byCat[it.cat] = byCat[it.cat] || []).push(it) })
       const keyed = Object.keys(byCat).sort((a, b) => {
         const oa = a in catsOrder, ob = b in catsOrder
         if (oa && ob) return this.cats.findIndex((c) => c.name === a) - this.cats.findIndex((c) => c.name === b)
@@ -299,25 +432,46 @@ export default {
         return a.localeCompare(b, 'zh')
       })
       return keyed.map((cat) => ({ cat, items: byCat[cat] }))
-    }
+    },
+    // 餐厅：关键词
+    filterShops() {
+      const q = this.shopQ.trim().toLowerCase()
+      return this.shops.filter((s) => !q || String(s.name || '').toLowerCase().includes(q) || String(s.type || '').toLowerCase().includes(q))
+    },
+    shownShops() { return this.filterShops.slice(0, this.shopLimit) }
   },
   onShow() {
     this.curName = uni.getStorageSync('eat_user') || '我'
     this.isAdmin = uni.getStorageSync('eat_admin') === '1'
-    this.loadAll()
+    if (this.isAdmin) this.loadAll()
   },
   methods: {
     back() { uni.navigateBack() },
+    // —— 登录门 ——
+    async doLogin() {
+      const code = (this.loginCode || '').trim()
+      if (!code) return uni.showToast({ title: '请输入口令', icon: 'none' })
+      try {
+        await adminApi.login(code)
+        uni.setStorageSync('eat_admin', '1')
+        this.isAdmin = true
+        uni.showToast({ title: '登录成功', icon: 'success' })
+        this.loadAll()
+      } catch (e) {
+        uni.showToast({ title: e.message, icon: 'none' })
+      }
+    },
     async loadAll() {
       if (!this.isAdmin) return
       try {
-        const [tips, refs, covers, ingredients, cats, shops] = await Promise.all([
+        const [tips, refs, covers, ingredients, cats, shops, st] = await Promise.all([
           tipApi.list(this.curName, true),
           recipeApi.list('admin'),
           coverApi.list(),
           ingredientApi.list(),
           catApi.list(),
-          shopApi.list()
+          shopApi.list(),
+          adminApi.stats()
         ])
         this.tips = tips
         this.refs = refs
@@ -325,22 +479,35 @@ export default {
         this.ingredients = ingredients.map((x) => ({ id: x.id, name: x.name, cat: x.cat || '其他' }))
         this.cats = cats.map((c) => ({ id: c.id, name: c.name, icon: c.icon || '🥗' }))
         this.shops = shops
+        this.stats = st || this.stats
         // 配置
-        const [a, e] = await Promise.all([configApi.get('audit_enabled'), configApi.get('expiry_threshold_days')])
+        const [a, e, p] = await Promise.all([configApi.get('audit_enabled'), configApi.get('expiry_threshold_days'), configApi.get('admin_passcode')])
         this.audit = (a.value === '1' || a.value === true || a.value === 1)
         this.expiry = Number(e.value)
+        this.passcode = p.value
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
-    },
-    // 权限门
-    toggleGate(e) {
-      uni.setStorageSync('eat_admin', e.detail.value ? '1' : '0')
-      this.isAdmin = e.detail.value
-      if (this.isAdmin) this.loadAll()
     },
     // —— 技巧审核 ——
     statusText(s) { return { pending: '⏳ 待审核', approved: '✅ 已公开', rejected: '🚫 未通过' }[s] || '' },
     async approve(t) { await tipApi.approve(t.id); this.loadAll() },
     async reject(t) { await tipApi.reject(t.id); this.loadAll() },
+    // —— 参考菜谱 编辑/删除 ——
+    editRef(r) {
+      this.form = {
+        id: r.id, name: r.name, em: r.em, time: r.time || 0, diff: r.diff || '简单',
+        tagsText: (r.tags || []).join('、'),
+        ingText: (r.ing || []).map((i) => i.name || i).join('、'),
+        stepsText: (r.steps || []).join('\n'),
+        cover: r.cover === undefined || r.cover === null || r.cover === '' ? '' : String(r.cover)
+      }
+      this.modal = { show: true, mode: 'ref', id: r.id }
+    },
+    delRef(r) {
+      uni.showModal({
+        title: '删除参考菜谱', content: `删除「${r.name}」？若已加入「吃这些」会一并移除。`, confirmText: '删除', confirmColor: '#e64340',
+        success: (res) => { if (res.confirm) recipeApi.del(r.id).then(this.loadAll) }
+      })
+    },
     // —— 封面 ——
     moveCover(c, dir) { coverApi.move(c.id, dir).then(this.loadAll) },
     editCover(c) { this.form = { id: c.id, emoji: c.emoji, name: c.name || '', grad: c.grad || DEFAULT_GRAD }; this.modal = { show: true, mode: 'cover', id: c.id } },
@@ -378,10 +545,16 @@ export default {
       const v = Number(e.detail.value)
       if (!isNaN(v) && v > 0) { this.expiry = v; configApi.set('expiry_threshold_days', String(v)) }
     },
+    setPasscode(e) {
+      const v = (e.detail.value || '').trim()
+      if (!v) return
+      this.passcode = v
+      configApi.set('admin_passcode', v)
+    },
     // —— 弹窗 ——
     openModal(mode) {
       if (mode === 'cover') { this.form = { id: null, emoji: '🍽', name: '', grad: DEFAULT_GRAD } }
-      else if (mode === 'ref') { this.form = { name: '', em: '🍲', time: 20, diff: '简单', tagsText: '', ingText: '', stepsText: '', cover: '' } }
+      else if (mode === 'ref') { this.form = { id: null, name: '', em: '🍲', time: 20, diff: '简单', tagsText: '', ingText: '', stepsText: '', cover: '' } }
       this.modal = { show: true, mode, id: null }
     },
     closeModal() { this.modal = { show: false, mode: '', id: null } },
@@ -422,7 +595,7 @@ export default {
         return this.saveRef()
       }
     },
-    // 参考菜谱：仅录入（后端 source=admin 只读，禁编辑/删除）
+    // 参考菜谱：录入 或 编辑（复用同一表单；有 id 走 update）
     saveRef() {
       const name = (this.form.name || '').trim()
       if (!name) return uni.showToast({ title: '请填菜名', icon: 'none' })
@@ -436,7 +609,8 @@ export default {
         ing: (this.form.ingText || '').split(/[，,、]+/).map((x) => x.trim()).filter(Boolean).map((n) => ({ name: n, qty: 1, unit: '份' })),
         steps: (this.form.stepsText || '').split('\n').map((x) => x.trim()).filter(Boolean)
       }
-      return recipeApi.create(data).then(() => { this.closeModal(); this.loadAll() }).catch((e) => uni.showToast({ title: e.message, icon: 'none' }))
+      const p = this.form.id ? recipeApi.update(this.form.id, data) : recipeApi.create(data)
+      return p.then(() => { this.closeModal(); this.loadAll() }).catch((e) => uni.showToast({ title: e.message, icon: 'none' }))
     }
   }
 }
@@ -453,11 +627,13 @@ export default {
 .ah-role.off { background: #fff2f2; color: #e64340; }
 .ah-back { font-size: 14px; cursor: pointer; padding: 6px 12px; border: 1px solid rgba(255,255,255,.6); border-radius: 8px; }
 
-.gate { margin: 60px auto; padding: 32px 40px; background: #fff; border: 1px solid #e5e6eb; border-radius: 16px; text-align: center; max-width: 480px; }
-.gate-ic { font-size: 40px; display: block; }
-.gate-t { display: block; color: #666; font-size: 15px; margin: 12px 0 20px; }
-.gate-row { display: flex; align-items: center; justify-content: center; gap: 12px; }
-.gate-lbl { font-size: 13px; color: #4b3fe3; }
+/* 登录门 */
+.gate { margin: 60px auto; padding: 40px; background: #fff; border: 1px solid #e5e6eb; border-radius: 16px; text-align: center; max-width: 440px; }
+.gate-ic { font-size: 44px; display: block; }
+.gate-t { display: block; color: #555; font-size: 15px; margin: 12px 0 20px; }
+.gate-in { border: 1px solid #d8dae0; border-radius: 10px; height: 46px; line-height: 46px; font-size: 18px; letter-spacing: 4px; width: 100%; box-sizing: border-box; }
+.gate-act { margin-top: 24px; }
+.gate-hint { display: block; color: #aaa; font-size: 12px; margin-top: 14px; }
 
 .abody { flex: 1; display: flex; min-height: 0; }
 .asider { width: 200px; flex-shrink: 0; background: #fff; border-right: 1px solid #e5e6eb; padding: 12px 0; }
@@ -479,13 +655,43 @@ export default {
 .card { background: #fff; border: 1px solid #e5e6eb; border-radius: 12px; }
 .row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 10px; }
 .none { display: block; color: #aaa; text-align: center; padding: 40px 0; font-size: 13px; }
+.none2 { display: block; color: #aaa; text-align: center; padding: 20px 0; font-size: 12px; }
 .sp { flex: 1; }
+
+/* 搜索 / 筛选 工具栏 */
+.fbar { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+.fsearch { background: #fff; border: 1px solid #e5e6eb; border-radius: 8px; height: 36px; line-height: 36px; padding: 0 12px; font-size: 13px; width: 240px; box-sizing: border-box; }
+.fcount { font-size: 12px; color: #999; }
+.seg { display: flex; background: #fff; border: 1px solid #e5e6eb; border-radius: 8px; overflow: hidden; }
+.sell { padding: 6px 16px; font-size: 13px; cursor: pointer; color: #666; }
+.sell.on { background: #4b3fe3; color: #fff; }
+.more { display: block; margin: 16px auto 0; }
 
 /* 通用按钮 */
 .pbtn { border: none; background: #4b3fe3; color: #fff; font-size: 13px; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
 .pbtn.ghost { background: #fff; color: #4b3fe3; border: 1px solid #4b3fe3; }
 .pbtn.danger { background: #fff; color: #e64340; border: 1px solid #e64340; }
 .pbtn.ok { background: #07c160; }
+
+/* 统计仪表盘 */
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+.kpi { display: flex; align-items: center; gap: 14px; padding: 18px 20px; }
+.kpi-ic { font-size: 30px; }
+.kpi-num { font-size: 28px; font-weight: 800; color: #4b3fe3; }
+.kpi-t { font-size: 13px; color: #666; }
+.dash2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.panel { padding: 18px 20px; }
+.panel-t { font-size: 14px; font-weight: 700; display: block; margin-bottom: 16px; }
+.hbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.hbar-lbl { width: 44px; font-size: 13px; color: #555; flex-shrink: 0; }
+.hbar-track { flex: 1; background: #f0f1f5; border-radius: 999px; height: 18px; }
+.hbar-fill { height: 18px; border-radius: 999px; background: linear-gradient(90deg, #4b3fe3, #8b5cf6); }
+.hbar-num { width: 28px; font-size: 13px; font-weight: 700; text-align: right; }
+.wchart { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; height: 150px; padding: 0 6px; box-sizing: border-box; }
+.wcol { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; }
+.wbar { width: 26px; max-width: 60%; border-radius: 6px 6px 0 0; background: linear-gradient(180deg, #10b981, #34d399); }
+.wnum { font-size: 11px; color: #333; }
+.wdate { font-size: 11px; color: #999; }
 
 /* tips */
 .trow { padding: 14px 18px; margin-bottom: 12px; }
@@ -508,6 +714,8 @@ export default {
 .rinfo { margin-top: 10px; }
 .rn { font-size: 14px; font-weight: 700; display: block; }
 .rm { font-size: 12px; color: #888; }
+.raction { display: flex; gap: 10px; margin-top: 12px; }
+.raction .pbtn { flex: 1; }
 
 /* covers */
 .clist .crow { display: flex; align-items: center; gap: 14px; padding: 12px 16px; margin-bottom: 10px; }
@@ -534,6 +742,7 @@ export default {
 .cfg-t { font-size: 14px; font-weight: 600; }
 .cfg-s { font-size: 12px; color: #888; }
 .num { border: 1px solid #e5e6eb; border-radius: 8px; height: 34px; width: 96px; text-align: right; padding: 0 10px; box-sizing: border-box; font-size: 13px; }
+.w160 { width: 160px; text-align: left; letter-spacing: 2px; }
 
 /* 弹窗 */
 .mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 24px; }

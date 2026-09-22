@@ -109,10 +109,8 @@ def get_recipe(rid: int, conn: Connection = Depends(get_db)):
 
 @router.put("/{rid}")
 def update_recipe(rid: int, body: RecipePatch, conn: Connection = Depends(get_db)):
-    """编辑菜谱。参考菜谱（source=admin）只读，禁止修改。"""
+    """编辑菜谱。参考菜谱（source=admin）由管理端编辑，同样放行；名称唯一校验仅针对我的菜谱。"""
     rec = _get(conn, rid)
-    if rec["source"] == "admin":
-        raise HTTPException(403, "参考菜谱只读，不能编辑")
     data = body.model_dump(exclude_none=True)
     if "name" in data and data["name"] != rec["name"]:
         if _check_name_unique(conn, data["name"], exclude_id=rid):
@@ -132,14 +130,12 @@ def update_recipe(rid: int, body: RecipePatch, conn: Connection = Depends(get_db
 
 @router.delete("/{rid}")
 def delete_recipe(rid: int, conn: Connection = Depends(get_db)):
-    """删除我的菜谱。参考菜谱只读，禁止删除。
+    """删除菜谱（我的或参考菜谱均可，由管理端对 admin 源操作）。
 
     若该菜谱已在「吃这些」候选里，一并清理：回退其代入的待采购量
     （复用候选回退逻辑）并删除候选与计时，保持 COOK 一致。
     """
     rec = _get(conn, rid)
-    if rec["source"] == "admin":
-        raise HTTPException(403, "参考菜谱只读，不能删除")
     # 清理关联候选：先回退代入的待采购，再删候选与计时
     cand = conn.execute(
         "SELECT * FROM eat_inbox WHERE kind='recipe' AND ref_id=?", (rid,)

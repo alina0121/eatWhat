@@ -111,3 +111,9 @@ export const configApi = {
   get: (key) => req.get(`/configs/${key}`),
   set: (key, value) => req.put(`/configs/${key}`, { value })
 }
+
+// 管理端：密码登录 + 统计仪表盘（打开管理国会话，不影响移动端）
+export const adminApi = {
+  login: (code) => req.post('/admin/login', { code }),
+  stats: () => req.get('/admin/stats')
+}

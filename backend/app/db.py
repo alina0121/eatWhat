@@ -188,6 +188,8 @@ def init_db() -> None:
         # 默认配置：审核开关（1 开 0 关）、临期阈值天数
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('audit_enabled','1')")
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('expiry_threshold_days','3')")
+        # 管理端登录口令：仅门控管理台，不影响移动端（MVP 语义，上线可改库）
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('admin_passcode','123456')")
         # 默认管理员
         conn.execute("INSERT OR IGNORE INTO users(id,name,role) VALUES(1,'管理员','admin')")
         # 食材大类默认种子：仅当表为空时写入（避免把用户删除/改名的大类复活）
