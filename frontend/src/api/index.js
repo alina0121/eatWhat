@@ -112,8 +112,12 @@ export const configApi = {
   set: (key, value) => req.put(`/configs/${key}`, { value })
 }
 
-// 管理端：密码登录 + 统计仪表盘（打开管理国会话，不影响移动端）
+// 管理端：密码登录 + 公共资源统计 + 用户管理（仅公共信息，个人数据在上管理端）
 export const adminApi = {
   login: (code) => req.post('/admin/login', { code }),
-  stats: () => req.get('/admin/stats')
+  stats: () => req.get('/admin/stats'),
+  users: () => req.get('/admin/users'),
+  createUser: (data) => req.post('/admin/users', data),
+  updateUser: (id, data) => req.put(`/admin/users/${id}`, data),
+  delUser: (id) => req.del(`/admin/users/${id}`)
 }

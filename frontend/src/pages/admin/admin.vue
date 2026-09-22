@@ -1,5 +1,5 @@
 <!-- admin.vue —— 吃啥 · PC 管理端（桌面宽屏：左侧菜单 + 右侧内容区）
-  复用现有移动端同一套 API（tipApi/recipeApi/coverApi/ingredientApi/catApi/shopApi/configApi），
+  复用现有移动端同一套 API（tipApi/recipeApi/coverApi/ingredientApi/catApi/configApi），
   并新增 adminApi（密码登录 + 统计聚合）。入口在「我的」页仅 PC 宽屏显示，移动端不可见。
   登录口令在配置表 admin_passcode（默认 123456），仅门控管理台，不影响移动端。
 -->
@@ -37,9 +37,9 @@
 
       <!-- 右侧内容区 -->
       <view class="acont">
-        <!-- ============ 0. 统计仪表盘 ============ -->
+        <!-- ============ 0. 统计（仅公共资源） ============ -->
         <template v-if="sec === 'stats'">
-          <view class="sec-h"><text class="sh-t">统计仪表盘</text><text class="sh-s">数据实时现算，仅作参考</text></view>
+          <view class="sec-h"><text class="sh-t">统计</text><text class="sh-s">公共资源概况；个人数据请去用户端查看</text></view>
           <view class="kpis">
             <view class="kpi card" v-for="k in kpis" :key="k.ic">
               <text class="kpi-ic">{{ k.ic }}</text>
@@ -47,30 +47,23 @@
               <text class="kpi-t">{{ k.t }}</text>
             </view>
           </view>
-          <view class="dash2">
-            <!-- 本月干饭分布 -->
-            <view class="panel card">
-              <text class="panel-t">📊 本月干饭分布 <text class="sh-s">{{ stats.monthly.month }}</text></text>
-              <view class="hbar" v-for="d in monthlyDist" :key="d.label">
-                <text class="hbar-lbl">{{ d.label }}</text>
-                <view class="hbar-track"><view class="hbar-fill" :style="{ width: d.w + '%' }"></view></view>
-                <text class="hbar-num">{{ d.count }}</text>
-              </view>
-              <text class="none2" v-if="!monthlyDist.length">本月还没有干饭记录</text>
-            </view>
-            <!-- 体重趋势 -->
-            <view class="panel card">
-              <text class="panel-t">⚖️ 体重趋势（最近 {{ weightTrend.length }} 次）</text>
-              <view class="wchart">
-                <view class="wcol" v-for="w in weightTrend" :key="w.date">
-                  <view class="wbar" :style="{ height: w.h + 'px' }"></view>
-                  <text class="wnum">{{ w.weight }}</text>
-                  <text class="wdate">{{ w.date.slice(5) }}</text>
-                </view>
-              </view>
-              <text class="none2" v-if="!weightTrend.length">还没有体重记录</text>
-            </view>
+        </template>
+
+        <!-- ============ 1. 用户管理 ============ -->
+        <template v-if="sec === 'users'">
+          <view class="sec-h">
+            <text class="sh-t">用户管理</text>
+            <view class="sec-act"><button class="pbtn" @click="openUserAdd">＋ 新增用户</button></view>
           </view>
+          <view class="row card" v-for="u in users" :key="u.id">
+            <view class="uico">{{ u.role === 'admin' ? '👑' : '🙂' }}</view>
+            <view class="uc"><text class="sn">{{ u.name }}</text><text class="sm">{{ u.role === 'admin' ? '管理员' : '普通用户' }}</text></view>
+            <view class="sp"></view>
+            <button class="pbtn ghost" @click="toggleRole(u)">{{ u.role === 'admin' ? '设为普通' : '设为管理' }}</button>
+            <button class="pbtn ghost" @click="editUser(u)">✎</button>
+            <button class="pbtn danger" @click="delUser(u)" :class="{ dis: u.id === 1 }">✕</button>
+          </view>
+          <text class="none" v-if="!users.length">还没有用户</text>
         </template>
 
         <!-- ============ 1. 厨房技巧审核 ============ -->
@@ -193,28 +186,7 @@
           </template>
         </template>
 
-        <!-- ============ 5. 餐厅 ============ -->
-        <template v-if="sec === 'shops'">
-          <view class="sec-h">
-            <text class="sh-t">餐厅</text>
-            <view class="sec-act"><button class="pbtn" @click="openShopAdd">＋ 收藏</button></view>
-          </view>
-          <view class="fbar">
-            <input class="fsearch" v-model="shopQ" placeholder="按名称 / 类型搜索…" />
-            <text class="fcount">共 {{ filterShops.length }} 条</text>
-          </view>
-          <view v-for="s in shownShops" :key="s.id">
-            <view class="row card">
-              <view class="sico">🏪</view>
-              <view class="sc"><text class="sn">{{ s.name }}</text><text class="sm">{{ s.type }} · {{ s.price || '—' }} · ⭐ {{ s.star || '新' }}</text></view>
-              <view class="sp"></view>
-              <button class="pbtn ghost" @click="editShop(s)">✎</button>
-              <button class="pbtn danger" @click="delShop(s)">✕</button>
-            </view>
-          </view>
-          <text class="none" v-if="!filterShops.length">还没有收藏餐厅</text>
-          <button class="pbtn ghost more" v-if="filterShops.length > shownShops.length" @click="shopLimit += 20">加载更多（{{ shownShops.length }}/{{ filterShops.length }}）</button>
-        </template>
+        <!-- 餐厅（个人收藏）不再纳入管理端：看个人数据去用户端 -->
 
         <!-- ============ 6. 系统配置 ============ -->
         <template v-if="sec === 'config'">
@@ -298,20 +270,19 @@
           </view>
         </template>
 
-        <!-- 餐厅 -->
-        <template v-if="modal.mode === 'shop'">
-          <text class="d-title">{{ form.id ? '编辑餐厅' : '收藏餐厅' }}</text>
-          <input v-model="form.name" placeholder="餐厅名 *" class="di" />
-          <input v-model="form.type" placeholder="类型：中餐/西餐…" class="di" />
-          <input v-model="form.price" placeholder="人均 ¥" class="di" />
-          <input v-model.number="form.arr_min" type="number" placeholder="到达耗时(分)" class="di" />
-          <input v-model="form.transport" placeholder="交通工具：步行/骑车/开车" class="di" />
-          <input v-model="form.mustText" placeholder="招牌菜，逗号分隔" class="di" />
+        <!-- 用户新增/编辑 -->
+        <template v-if="modal.mode === 'user'">
+          <text class="d-title">{{ form.id ? '编辑用户' : '新增用户' }}</text>
+          <input v-model="form.name" placeholder="用户名 *" class="di" />
+          <view class="chip-row">
+            <view class="chip" :class="{ on: form.role === 'user' }" @click="form.role = 'user'">🙂 普通用户</view>
+            <view class="chip" :class="{ on: form.role === 'admin' }" @click="form.role = 'admin'">👑 管理员</view>
+          </view>
         </template>
 
         <view class="d-btns">
           <button class="pbtn ghost" @click="closeModal">取消</button>
-          <button class="pbtn" v-if="['ref','cover','cat','ing','shop'].includes(modal.mode)" @click="save">保存</button>
+          <button class="pbtn" v-if="['ref','cover','cat','ing','user'].includes(modal.mode)" @click="save">保存</button>
         </view>
       </view>
     </view>
@@ -319,7 +290,7 @@
 </template>
 
 <script>
-import { tipApi, recipeApi, coverApi, ingredientApi, catApi, shopApi, configApi, adminApi } from '@/api'
+import { tipApi, recipeApi, coverApi, ingredientApi, catApi, configApi, adminApi } from '@/api'
 
 const DEFAULT_GRAD = 'linear-gradient(135deg,#4b3fe3,#8b5cf6)'
 const grads = [
@@ -339,21 +310,21 @@ export default {
     return {
       menus: [
         { k: 'stats', ic: '📊', t: '统计' },
+        { k: 'users', ic: '👥', t: '用户管理' },
         { k: 'tips', ic: '👨‍🍳', t: '厨房技巧审核' },
         { k: 'ref', ic: '📚', t: '参考菜谱' },
         { k: 'covers', ic: '🖼️', t: '封面图库' },
         { k: 'ing', ic: '🧺', t: '食材库 & 大类' },
-        { k: 'shops', ic: '🏪', t: '餐厅' },
         { k: 'config', ic: '⚙️', t: '系统配置' }
       ],
       DEFAULT_GRAD, grads, catIcons,
       sec: 'stats', curName: '', isAdmin: false,
       // 登录
       loginCode: '', passcode: '',
-      // 统计
-      stats: { cards: {}, monthly: { dist: [] }, weight_trend: [] },
+      // 统计（仅公共资源计数）
+      stats: { cards: {} },
       // 各列表数据
-      tips: [], refs: [], covers: [], ingredients: [], cats: [], shops: [],
+      tips: [], refs: [], covers: [], ingredients: [], cats: [], users: [],
       audit: true, expiry: 3,
       ingTab: 'ing',
       // 搜索 / 筛选 / 分页
@@ -362,40 +333,23 @@ export default {
       ],
       refQ: '', refLimit: 20,
       ingQ: '',
-      shopQ: '', shopLimit: 20,
       modal: { show: false, mode: '', id: null },
       form: {}
     }
   },
   computed: {
-    // 统计：计数卡片
+    // 统计：公共资源计数卡
     kpis() {
       const c = this.stats.cards || {}
       return [
-        { ic: '🍲', t: '我的菜谱', k: c.recipes_my || 0 },
+        { ic: '👥', t: '用户数', k: c.users || 0 },
         { ic: '📚', t: '参考菜谱', k: c.recipes_ref || 0 },
         { ic: '🧺', t: '食材库', k: c.ingredients || 0 },
-        { ic: '🧊', t: '冰箱在库', k: c.fridge_in || 0 },
-        { ic: '🛒', t: '待采购', k: c.purchase || 0 },
-        { ic: '🏪', t: '餐厅', k: c.shops || 0 },
-        { ic: '👨‍🍳', t: '技巧待审', k: c.tips_pending || 0 },
-        { ic: '🍚', t: '干饭记录', k: c.records_total || 0 }
+        { ic: '🗂️', t: '大类', k: c.categories || 0 },
+        { ic: '🖼️', t: '封面图库', k: c.covers || 0 },
+        { ic: '👨‍🍳', t: '技巧总数', k: c.tips_total || 0 },
+        { ic: '⏳', t: '技巧待审', k: c.tips_pending || 0 }
       ]
-    },
-    // 本月干饭分布（宽条形比例）
-    monthlyDist() {
-      const d = this.stats.monthly?.dist || []
-      const mx = d.reduce((a, b) => Math.max(a, b.count || 0), 1)
-      return d.map((x) => ({ ...x, w: ((x.count || 0) / mx) * 100 }))
-    },
-    // 体重趋势（归一化柱高）
-    weightTrend() {
-      const t = (this.stats.weight_trend || []).slice()
-      if (!t.length) return []
-      const vals = t.map((x) => x.weight)
-      const mn = Math.min(...vals)
-      const span = (Math.max(...vals) - mn) || 1
-      return t.map((x) => ({ date: x.date, weight: x.weight, h: Math.round(38 + ((x.weight - mn) / span) * 82) }))
     },
     // 技巧：状态筛选 + 关键词
     filterTips() {
@@ -432,13 +386,7 @@ export default {
         return a.localeCompare(b, 'zh')
       })
       return keyed.map((cat) => ({ cat, items: byCat[cat] }))
-    },
-    // 餐厅：关键词
-    filterShops() {
-      const q = this.shopQ.trim().toLowerCase()
-      return this.shops.filter((s) => !q || String(s.name || '').toLowerCase().includes(q) || String(s.type || '').toLowerCase().includes(q))
-    },
-    shownShops() { return this.filterShops.slice(0, this.shopLimit) }
+    }
   },
   onShow() {
     this.curName = uni.getStorageSync('eat_user') || '我'
@@ -464,13 +412,13 @@ export default {
     async loadAll() {
       if (!this.isAdmin) return
       try {
-        const [tips, refs, covers, ingredients, cats, shops, st] = await Promise.all([
+        const [tips, refs, covers, ingredients, cats, users, st] = await Promise.all([
           tipApi.list(this.curName, true),
           recipeApi.list('admin'),
           coverApi.list(),
           ingredientApi.list(),
           catApi.list(),
-          shopApi.list(),
+          adminApi.users(),
           adminApi.stats()
         ])
         this.tips = tips
@@ -478,7 +426,7 @@ export default {
         this.covers = covers.map((c) => ({ ...c, grad: c.grad || DEFAULT_GRAD }))
         this.ingredients = ingredients.map((x) => ({ id: x.id, name: x.name, cat: x.cat || '其他' }))
         this.cats = cats.map((c) => ({ id: c.id, name: c.name, icon: c.icon || '🥗' }))
-        this.shops = shops
+        this.users = users
         this.stats = st || this.stats
         // 配置
         const [a, e, p] = await Promise.all([configApi.get('audit_enabled'), configApi.get('expiry_threshold_days'), configApi.get('admin_passcode')])
@@ -486,6 +434,19 @@ export default {
         this.expiry = Number(e.value)
         this.passcode = p.value
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
+    },
+    // —— 用户管理 ——
+    openUserAdd() { this.form = { id: null, name: '', role: 'user' }; this.modal = { show: true, mode: 'user', id: null } },
+    editUser(u) { this.form = { id: u.id, name: u.name, role: u.role }; this.modal = { show: true, mode: 'user', id: u.id } },
+    toggleRole(u) {
+      const role = u.role === 'admin' ? 'user' : 'admin'
+      if (u.id === 1 && role === 'user') return uni.showToast({ title: '内置管理员不可降级', icon: 'none' })
+      adminApi.updateUser(u.id, { role }).then(this.loadAll)
+    },
+    delUser(u) {
+      if (u.id === 1) return uni.showToast({ title: '内置管理员不可删除', icon: 'none' })
+      uni.showModal({ title: '删除用户', content: `删除「${u.name}」？`, confirmText: '删除', confirmColor: '#e64340',
+        success: (res) => { if (res.confirm) adminApi.delUser(u.id).then(this.loadAll) } })
     },
     // —— 技巧审核 ——
     statusText(s) { return { pending: '⏳ 待审核', approved: '✅ 已公开', rejected: '🚫 未通过' }[s] || '' },
@@ -532,13 +493,6 @@ export default {
       uni.showModal({ title: '移除食材', content: `从食材库移除「${it.name}」？不影响已用的菜谱/库存。`, confirmText: '移除', confirmColor: '#e64340',
         success: (res) => { if (res.confirm) ingredientApi.del(it.id).then(this.loadAll) } })
     },
-    // —— 餐厅 ——
-    openShopAdd() { this.form = { id: null, name: '', type: '中餐', price: '', arr_min: 0, transport: '步行', mustText: '' }; this.modal = { show: true, mode: 'shop', id: null } },
-    editShop(s) { this.form = { id: s.id, name: s.name, type: s.type, price: s.price, arr_min: s.arr_min || 0, transport: s.transport, mustText: (s.must || []).join('、') }; this.modal = { show: true, mode: 'shop', id: s.id } },
-    delShop(s) {
-      uni.showModal({ title: '删除餐厅', content: `删除「${s.name}」？`, confirmText: '删除', confirmColor: '#e64340',
-        success: (res) => { if (res.confirm) shopApi.del(s.id).then(this.loadAll) } })
-    },
     // —— 配置 ——
     setAudit(e) { this.audit = e.detail.value; configApi.set('audit_enabled', this.audit ? '1' : '0') },
     setExpiry(e) {
@@ -579,16 +533,12 @@ export default {
         const p = this.form.id ? ingredientApi.update(this.form.id, { name, cat: this.form.cat }) : ingredientApi.create({ name, cat: this.form.cat })
         return p.then(() => { this.closeModal(); this.loadAll() }).catch((e) => uni.showToast({ title: e.message, icon: 'none' }))
       }
-      if (mode === 'shop') {
+      if (mode === 'user') {
         const name = (this.form.name || '').trim()
-        if (!name) return uni.showToast({ title: '请填餐厅名', icon: 'none' })
-        const data = {
-          name, type: this.form.type || '中餐', price: this.form.price || '',
-          arr_min: this.form.arr_min || 0, transport: this.form.transport || '步行',
-          star: this.form.star ?? 0,
-          must: (this.form.mustText || '').split(/[，,、]/).map((x) => x.trim()).filter(Boolean)
-        }
-        const p = this.form.id ? shopApi.update(this.form.id, data) : shopApi.create(data)
+        if (!name) return uni.showToast({ title: '请填用户名', icon: 'none' })
+        if (this.form.id === 1 && this.form.role !== 'admin') return uni.showToast({ title: '内置管理员不可降级', icon: 'none' })
+        const data = { name, role: this.form.role || 'user' }
+        const p = this.form.id ? adminApi.updateUser(this.form.id, data) : adminApi.createUser(data)
         return p.then(() => { this.closeModal(); this.loadAll() }).catch((e) => uni.showToast({ title: e.message, icon: 'none' }))
       }
       if (mode === 'ref') {
@@ -655,7 +605,6 @@ export default {
 .card { background: #fff; border: 1px solid #e5e6eb; border-radius: 12px; }
 .row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 10px; }
 .none { display: block; color: #aaa; text-align: center; padding: 40px 0; font-size: 13px; }
-.none2 { display: block; color: #aaa; text-align: center; padding: 20px 0; font-size: 12px; }
 .sp { flex: 1; }
 
 /* 搜索 / 筛选 工具栏 */
@@ -673,25 +622,17 @@ export default {
 .pbtn.danger { background: #fff; color: #e64340; border: 1px solid #e64340; }
 .pbtn.ok { background: #07c160; }
 
-/* 统计仪表盘 */
-.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+/* 统计（公共资源卡片） */
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .kpi { display: flex; align-items: center; gap: 14px; padding: 18px 20px; }
 .kpi-ic { font-size: 30px; }
 .kpi-num { font-size: 28px; font-weight: 800; color: #4b3fe3; }
 .kpi-t { font-size: 13px; color: #666; }
-.dash2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.panel { padding: 18px 20px; }
-.panel-t { font-size: 14px; font-weight: 700; display: block; margin-bottom: 16px; }
-.hbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.hbar-lbl { width: 44px; font-size: 13px; color: #555; flex-shrink: 0; }
-.hbar-track { flex: 1; background: #f0f1f5; border-radius: 999px; height: 18px; }
-.hbar-fill { height: 18px; border-radius: 999px; background: linear-gradient(90deg, #4b3fe3, #8b5cf6); }
-.hbar-num { width: 28px; font-size: 13px; font-weight: 700; text-align: right; }
-.wchart { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; height: 150px; padding: 0 6px; box-sizing: border-box; }
-.wcol { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; }
-.wbar { width: 26px; max-width: 60%; border-radius: 6px 6px 0 0; background: linear-gradient(180deg, #10b981, #34d399); }
-.wnum { font-size: 11px; color: #333; }
-.wdate { font-size: 11px; color: #999; }
+
+/* users */
+.uico { font-size: 24px; }
+.uc { display: flex; flex-direction: column; }
+.dis { opacity: .35; pointer-events: none; }
 
 /* tips */
 .trow { padding: 14px 18px; margin-bottom: 12px; }
@@ -728,9 +669,7 @@ export default {
 .inm { font-size: 14px; }
 .grp { margin-bottom: 16px; }
 .grp-t { display: block; font-size: 12px; color: #888; margin-bottom: 8px; }
-/* shops */
-.sico { font-size: 26px; }
-.sc { display: flex; flex-direction: column; }
+/* 通用 名称/描述 双行（用户行复用） */
 .sn { font-size: 14px; font-weight: 700; }
 .sm { font-size: 12px; color: #888; }
 /* config */
