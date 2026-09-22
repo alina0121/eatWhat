@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.db import init_db
 from app.routers import (
-    admin, candidates, categories, configs, covers, diners, fridge, ingredients, recipes, records, shops, tips, weights,
+    admin, candidates, categories, configs, covers, diners, fridge, ingredients, mine, recipes, records, shops, tips, weights,
 )
 
 # 幂等初始化数据库（首次启动自动建表+种子）
@@ -31,6 +31,7 @@ app.add_middleware(
 
 # 挂载各业务路由
 app.include_router(admin.router)
+app.include_router(mine.router)
 app.include_router(configs.router)
 app.include_router(recipes.router)
 app.include_router(fridge.router)

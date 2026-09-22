@@ -121,3 +121,8 @@ export const adminApi = {
   updateUser: (id, data) => req.put(`/admin/users/${id}`, data),
   delUser: (id) => req.del(`/admin/users/${id}`)
 }
+
+// 用户端「我的数据」总览：个人数据聚合（仅用户端使用，管理端不做个人数据）
+export const mineApi = {
+  stats: () => req.get('/mine/stats')
+}

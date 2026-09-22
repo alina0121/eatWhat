@@ -80,6 +80,10 @@
       "style": { "navigationBarTitleText": "PC 管理端", "navigationStyle": "custom" }
     },
     {
+      "path": "pages/mine-data/mine-data",
+      "style": { "navigationBarTitleText": "我的数据", "navigationStyle": "custom" }
+    },
+    {
       "path": "pages/mine-settings/mine-settings",
       "style": { "navigationBarTitleText": "设置", "navigationStyle": "custom" }
     }

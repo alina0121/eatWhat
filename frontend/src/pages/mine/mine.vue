@@ -61,6 +61,9 @@
       <!-- 功能菜单 -->
       <view class="section">
         <view class="menu">
+          <view class="mrow" @tap="nav('/pages/mine-data/mine-data')">
+            <text class="ic">📊</text><view class="m1"><text class="mt">我的数据</text><text class="ms">计数 · 本月干饭 · 体重趋势</text></view><text class="ar">›</text>
+          </view>
           <view class="mrow" @tap="nav('/pages/mine-ref/mine-ref')">
             <text class="ic">📚</text><view class="m1"><text class="mt">参考菜谱</text><text class="ms">管理员精选 · 可加入吃这些或我的菜谱</text></view><text class="ar">›</text>
           </view>
