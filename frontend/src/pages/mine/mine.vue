@@ -1,4 +1,4 @@
-﻿<!-- mine.vue —— 我的页（对齐「第一版 UI」p-me）
+<!-- mine.vue —— 我的页（对齐「第一版 UI」p-me）
   结构：资料头（头像+昵称+副标题）→ 统计条(本周做了多少顿 / 我的菜谱 / 收藏餐厅)
         → 干饭成员(各自口味偏好维护) → 功能菜单行(图标 + 标题 + 副标题 + ›)
 -->
@@ -78,9 +78,6 @@
           </view>
           <view class="mrow" @tap="nav('/pages/mine-ingredients/mine-ingredients')">
             <text class="ic">🧺</text><view class="m1"><text class="mt">食材库</text><text class="ms">菜谱可选食材 · 独立维护</text></view><text class="ar">›</text>
-          </view>
-          <view class="mrow" @tap="nav('/pages/mine-covers/mine-covers')">
-            <text class="ic">🖼️</text><view class="m1"><text class="mt">封面图库</text><text class="ms">菜谱封面 · 管理员维护点选</text></view><text class="ar">›</text>
           </view>
           <view class="mrow" @tap="nav('/pages/mine-settings/mine-settings')">
             <text class="ic">⚙️</text><view class="m1"><text class="mt">设置</text><text class="ms">账号 · 数据 · 关于</text></view><text class="ar">›</text>
