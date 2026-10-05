@@ -46,22 +46,25 @@ CREATE TABLE IF NOT EXISTS recipes(
     steps   TEXT NOT NULL DEFAULT '[]'     -- JSON 数组：步骤文本
 );
 
--- 食材库：菜谱选食材的独立维护来源（与冰箱库存解耦）
--- 设计：菜谱所需食材是「需求」，冰箱在库/待采购是「库存」；需求不从库存派生，
--- 故单独建一套可维护的食材池，菜谱编辑从其选择，库存只负责当前拥有/待采购。
+-- 食材库：双层模型——公共（scope=public）+ 用户私有补录（scope=user）
+-- list 默认返回「公共 + 用户自己补录」，同名公共优先（用户不能补公共已有的）；
+-- admin=true 管理端只看 public 层；user 端 create 默认 scope='user'。
 CREATE TABLE IF NOT EXISTS ingredients(
-    id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    cat  TEXT NOT NULL DEFAULT '其他'   -- 食材大类名（挂在 categories.name 下）
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1,      -- 所属用户（scope=public 时为 1）
+    scope   TEXT NOT NULL DEFAULT 'user',    -- public | user
+    name    TEXT NOT NULL,
+    cat     TEXT NOT NULL DEFAULT '其他'     -- 食材大类名
 );
 
--- 食材大类：独立实体，支持 增/删/改名/换图标/排序
--- name 供各食物表以名字关联（改名需级联更新 ingredients / fridge_items.cat）
+-- 食材大类：同 ingredients 双层模型——公共大类 + 用户私有补录
 CREATE TABLE IF NOT EXISTS categories(
-    id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    icon TEXT NOT NULL DEFAULT '🥗',
-    sort INTEGER NOT NULL DEFAULT 0      -- 展示顺序
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1,
+    scope   TEXT NOT NULL DEFAULT 'user',    -- public | user
+    name    TEXT NOT NULL,
+    icon    TEXT NOT NULL DEFAULT '🥗',
+    sort    INTEGER NOT NULL DEFAULT 0
 );
 
 -- 封面图库：管理员维护的固定封面（emoji + 渐变主题），菜谱编辑时从中点选。
@@ -74,25 +77,27 @@ CREATE TABLE IF NOT EXISTS covers(
     sort  INTEGER NOT NULL DEFAULT 0       -- 展示顺序
 );
 
--- 冰箱-在库：单条食材，状态（充足/临期）实时现算
+-- 冰箱-在库：单条食材，状态（充足/临期）实时现算；按 user_id 隔离
 CREATE TABLE IF NOT EXISTS fridge_items(
-    id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    name   TEXT NOT NULL,
-    cat    TEXT NOT NULL DEFAULT '其他',    -- 食材大类
-    qty    REAL NOT NULL DEFAULT 0,        -- 存量
-    unit   TEXT NOT NULL DEFAULT '份',
-    store  TEXT NOT NULL DEFAULT '',       -- 存放位置（可选）
-    buy    TEXT NOT NULL DEFAULT '',       -- 采购日期 YYYY-MM-DD
-    days   INTEGER NOT NULL DEFAULT 7       -- 保质期（天）
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1,      -- 所属用户
+    name    TEXT NOT NULL,
+    cat     TEXT NOT NULL DEFAULT '其他',    -- 食材大类
+    qty     REAL NOT NULL DEFAULT 0,         -- 存量
+    unit    TEXT NOT NULL DEFAULT '份',
+    store   TEXT NOT NULL DEFAULT '',        -- 存放位置（可选）
+    buy     TEXT NOT NULL DEFAULT '',        -- 采购日期 YYYY-MM-DD
+    days    INTEGER NOT NULL DEFAULT 7        -- 保质期（天）
 );
 
--- 冰箱-待采购：由在库不足代号入，也可手工维护
+-- 冰箱-待采购：按 user_id 隔离；唯一键变为 (user_id, name, unit)
 CREATE TABLE IF NOT EXISTS purchase(
-    id    INTEGER PRIMARY KEY AUTOINCREMENT,
-    name  TEXT NOT NULL,
-    qty   REAL NOT NULL DEFAULT 0,
-    unit  TEXT NOT NULL DEFAULT '份',
-    UNIQUE(name, unit)
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1,      -- 所属用户
+    name    TEXT NOT NULL,
+    qty     REAL NOT NULL DEFAULT 0,
+    unit    TEXT NOT NULL DEFAULT '份',
+    UNIQUE(user_id, name, unit)
 );
 
 -- 候选收件箱（吃这些）：kind=recipe 菜谱 / shop 餐厅

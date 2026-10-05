@@ -1,4 +1,4 @@
-﻿<!-- fridge-edit.vue - 新增/编辑食材（对齐第一版UI设计稿 p-fridge-add）
+<!-- fridge-edit.vue - 新增/编辑食材（对齐第一版UI设计稿 p-fridge-add）
   交互：名称+大类图标预览 / 食材大类点选 / 常用食材快捷 / 在冰箱与待采购 segs 切换。
   在冰箱：存放位置+数量+购买日期+保质期；待采购：数量。
   待采购为累加结构，本页仅支持新增（编辑走冰箱列表删除）。
@@ -34,16 +34,18 @@
         <view class="seg-tags" v-if="activeCatIngs.length">
           <view v-for="nm in activeCatIngs" :key="nm" class="chip" :class="{ on: form.name === nm }" @tap="form.name = nm">{{ nm }}</view>
         </view>
-        <text class="t-12" v-if="!activeCatIngs.length">{{ activeCat }} 暂无食材，可在下方输入名称自命名或收录</text>
+        <text class="t-12" v-if="!activeCatIngs.length">{{ activeCat }} 暂无食材，可在下方收录进食材库</text>
       </view>
 
       <view class="add-card">
         <text class="flabel">食材名称</text>
-        <view class="name-row">
+        <!-- 只读展示：名称只从食材库点选来，不支持自由输入 -->
+        <view class="name-row" :class="{ empty: !form.name }">
           <view class="add-preview">{{ emPreview }}</view>
-          <input class="finput" v-model="form.name" placeholder="自命名，如：虾仁" />
+          <text class="name-show" v-if="form.name">{{ form.name }}</text>
+          <text class="name-show ph" v-else>请先从上方食材库点选</text>
         </view>
-        <text class="t-12">点上面的食材名即选中；也可在这里自由输入</text>
+        <text class="t-12">名称唯一来自食材库；没找到可在下方收录</text>
         <!-- 收录进食材库：独立维护（与菜谱页「＋ 收录」一致） -->
         <view class="quick-add">
           <input class="quick-input" v-model="quickName" placeholder="新食材？输入并收录进食材库" />
@@ -71,7 +73,15 @@
           </view>
           <view class="field" v-if="type === 'stock'">
             <text class="flabel">购买日期</text>
-            <input class="finput" type="date" v-model="form.buy" />
+            <picker mode="date" :value="form.buy" @change="onBuyPick">
+                <view class="date-pick" :class="{ on: form.buy }">
+                  <view class="date-l">
+                    <text class="date-txt">{{ buyLabel }}</text>
+                    <text class="date-sub" v-if="form.buy">· {{ form.buy }}</text>
+                  </view>
+                  <text class="date-ar">›</text>
+                </view>
+              </picker>
           </view>
           <view class="field" v-if="type === 'stock'">
             <text class="flabel">保质期（自购买起）</text>
@@ -122,8 +132,7 @@ export default {
       catContentW: 0,      // 大类内容总宽(px)，用于算滑轨进度
       quickName: '',       // 快捷收录进食材库的输入
       qtyText: '',
-      form: { name: '', cat: '其他', qty: 1, unit: '份', store: '冷藏', buy: '', days: 7 }
-    }
+      form: { name: '', cat: '其他', qty: 1, unit: '份', store: '冷藏', buy: '', days: 7 }    }
   },
   computed: {
     title() {
@@ -153,6 +162,23 @@ export default {
     catThumbL() {          // 滑轨 thumb 左偏移(%)：随滚动进度滑动
       const m = this.catMax
       return m > 0 ? (this.catScroll / m) * (100 - this.catThumbW) : 0
+    },
+    // 购买日期的友好显示：今天/昨天/N天前；无日期时占位
+    buyLabel() {
+      const v = (this.form.buy || '').trim()
+      if (!v) return '选择日期'
+      try {
+        const bd = new Date(v + 'T00:00:00')
+        if (isNaN(bd.getTime())) return v
+        const now = new Date()
+        const td = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        const diff = Math.round((td - bd) / 86400000)
+        if (diff === 0) return '今天'
+        if (diff === 1) return '昨天'
+        if (diff === 2) return '前天'
+        if (diff > 2 && diff < 30) return `${diff} 天前`
+        return `${bd.getFullYear()}年${bd.getMonth() + 1}月${bd.getDate()}日`
+      } catch (e) { return v }
     }
   },
   onReady() {              // 渲染完成后量取大类尺寸，供滑轨进度计算
@@ -165,10 +191,22 @@ export default {
       this.cats = cats
       this.pool = ingr.map((x) => ({ name: x.name, cat: x.cat || '其他' }))
     } catch (e) { this.cats = []; this.pool = [] }
-    if (q.id) { this.id = Number(q.id); await this.load() }
+    if (q.id) {
+      this.id = Number(q.id)
+      await this.load()
+    } else if (this.type === 'stock') {
+      // 新增在库：默认购买日期=今天，避免空值
+      this.form.buy = this._today()
+    }
     this.$nextTick(() => this.measureCat())
   },
   methods: {
+    // 今天 YYYY-MM-DD（本地时区），给新增在库作默认购买日期
+    _today() {
+      const d = new Date()
+      const p = (n) => String(n).padStart(2, '0')
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+    },
     async load() {
       if (this.type === 'purchase') {
         const list = await fridgeApi.purchase()
@@ -215,8 +253,14 @@ export default {
         uni.showToast({ title: '已收录', icon: 'success' })
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
+    // 日期 picker 回调
+    onBuyPick(e) { this.form.buy = e.detail.value },
     async save() {
-      if (!this.form.name.trim()) return uni.showToast({ title: '请输入名称', icon: 'none' })
+      const name = (this.form.name || '').trim()
+      if (!name) return uni.showToast({ title: '请先从食材库点选名称', icon: 'none' })
+      // 新增时名称必须在食材库（保证冰箱食材与菜谱食材同源）；编辑时允许保持原名（兼容历史数据）
+      const inPool = this.pool.some((p) => p.name === name)
+      if (!this.id && !inPool) return uni.showToast({ title: '该食材不在食材库，请先收录', icon: 'none' })
       const q = parseQty(this.qtyText, { qty: this.form.qty, unit: this.form.unit })
       try {
         if (this.type === 'stock') {
@@ -254,8 +298,21 @@ export default {
 .quick-input { flex:1; min-width:0; height:64rpx; line-height:64rpx; padding:0 16rpx; border:1rpx dashed var(--border); border-radius:14rpx; font-size:26rpx; background:var(--bg); box-sizing:border-box; color:var(--text); }
 .quick-btn { flex-shrink:0; font-size:24rpx; color:var(--brand); padding:12rpx 20rpx; border-radius:999rpx; box-shadow:inset 0 0 0 2rpx var(--brand); }
 .name-row { display:flex; gap:12rpx; align-items:center; }
+.name-row.empty .add-preview { opacity:.5; }
+.name-show { flex:1; min-width:0; min-height:80rpx; display:flex; align-items:center; padding:0 16rpx; border:1rpx solid var(--border); border-radius:14rpx; font-size:28rpx; background:var(--card); color:var(--text); }
+.name-show.ph { color:#aaa; }
 .add-preview { width:76rpx; height:76rpx; border-radius:16rpx; background:var(--bg); display:flex; align-items:center; justify-content:center; font-size:40rpx; flex:0 0 76rpx; }
 .finput { flex:1; width:auto; min-width:0; min-height:80rpx; padding:0 16rpx; border:1rpx solid var(--border); border-radius:14rpx; font-size:28rpx; line-height:80rpx; background:var(--card); color:var(--text); }
+/* === 日期控件（minimal: 一行显示 + 短控件） === */
+.date-pick { display:flex; align-items:center; justify-content:space-between; height:60rpx; padding:0 16rpx; border-radius:10rpx; border:1rpx solid #e4e6ec; background:#fff; transition:all .15s; }
+.date-pick.on { border-color:#4b3fe3; background:#4b3fe3; }
+.date-l { display:flex; align-items:center; gap:8rpx; min-width:0; flex:1; overflow:hidden; }
+.date-txt { font-size:26rpx; color:#333; font-weight:500; white-space:nowrap; }
+.date-sub { font-size:20rpx; color:rgba(0,0,0,.4); white-space:nowrap; flex-shrink:0; }
+.date-pick.on .date-txt { color:#fff; }
+.date-pick.on .date-sub { color:rgba(255,255,255,.7); }
+.date-ar { font-size:28rpx; color:#aaa; font-weight:300; line-height:1; flex-shrink:0; margin-left:8rpx; }
+.date-pick.on .date-ar { color:rgba(255,255,255,.8); }
 .seg-tags { display:flex; gap:12rpx; flex-wrap:wrap; }
 .chip { font-size:24rpx; flex-shrink:0; white-space:nowrap; }
 .chip.on { background:var(--brand); border-color:var(--brand); color:#fff; }

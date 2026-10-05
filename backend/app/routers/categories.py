@@ -1,22 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-食材大类路由：独立维护的实体（name/icon/sort），供食材库、冰箱、编菜谱动态引用。
+食材大类路由：双层模型——公共（scope=public）+ 用户私有补录（scope=user）。
 
-约定：
-- 各食物表（ingredients / fridge_items）以「大类名」关联分类。
-- 改名 → 级联更新这些表里的 cat，保证数据一致。
-- 删除 → 该大类下的项退回兜底「其他」（不存在则创建），不丢数据。
-- 顺序 → 通过 sort 字段维护，提供上移/下移接口。
+规则与 ingredients 完全对齐：
+- 公共层：管理员维护，所有用户可见，不能被用户同名补录。
+- 用户私有层：补公共没有的，只限自己可见。
+- list 默认返回合并视图；public_only=True 管理端只看公共。
+- 改名级联 / 删除兜底 / 排序移动：只在当前 user 的可见范围生效。
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlite3 import Connection
+from typing import Optional
 
 from app.db import get_db, row_to_dict
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
-FALLBACK_CAT = "其他"  # 删除大类后的兜底归类
+FALLBACK_CAT = "其他"
 
 
 class CategoryIn(BaseModel):
@@ -25,95 +26,197 @@ class CategoryIn(BaseModel):
 
 
 class CategoryMove(BaseModel):
-    dir: str = "down"  # up | down
+    dir: str = "down"
 
 
-def _ensure_fallback(conn: Connection) -> None:
-    """保证兜底大类「其他」存在（删除兜底大类时重新兜底到它，自举修复）。"""
-    if conn.execute("SELECT 1 FROM categories WHERE name=?", (FALLBACK_CAT,)).fetchone() is None:
-        conn.execute(
-            "INSERT INTO categories(name,icon,sort) VALUES(?,?,0)",
-            (FALLBACK_CAT, "🥗"),
-        )
+def _merge_rows(conn: Connection, user_id: int) -> list:
+    """返回 public + 当前用户私有，按 sort 排序（public 优先）。"""
+    rows = conn.execute(
+        "SELECT * FROM categories WHERE scope='public' "
+        "UNION ALL "
+        "SELECT * FROM categories WHERE scope='user' AND user_id=? "
+        "ORDER BY sort, id",
+        (user_id,),
+    ).fetchall()
+    seen = set()
+    merged = []
+    for r in rows:
+        if r["name"] not in seen:
+            seen.add(r["name"])
+            merged.append(row_to_dict(r))
+    return merged
 
 
 @router.get("")
-def list_categories(conn: Connection = Depends(get_db)):
-    """分类清单（按 sort 升序，供前端分组与下拉）。"""
-    rows = conn.execute(
-        "SELECT * FROM categories ORDER BY sort, id"
-    ).fetchall()
-    return [row_to_dict(r) for r in rows]
+def list_categories(user: int = Query(1),
+                    public_only: bool = Query(False),
+                    conn: Connection = Depends(get_db)):
+    if public_only:
+        rows = conn.execute(
+            "SELECT * FROM categories WHERE scope='public' ORDER BY sort, id"
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+    return _merge_rows(conn, user)
+
+
+def _check_name_public(conn: Connection, name: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM categories WHERE scope='public' AND name=?", (name,)
+    ).fetchone() is not None
+
+
+def _check_name_private(conn: Connection, name: str, user_id: int, exclude_id: Optional[int] = None) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM categories WHERE scope='user' AND user_id=? AND name=? AND id IS NOT ?",
+        (user_id, name, exclude_id or -1),
+    ).fetchone() is not None
+
+
+def _ensure_fallback(conn: Connection, user_id: int) -> None:
+    """兜底「其他」优先从公共层取；没有就给当前用户建一份私有兜底。"""
+    if conn.execute(
+        "SELECT 1 FROM categories WHERE scope='public' AND name=?", (FALLBACK_CAT,)
+    ).fetchone() is None:
+        if conn.execute(
+            "SELECT 1 FROM categories WHERE scope='user' AND user_id=? AND name=?", (user_id, FALLBACK_CAT)
+        ).fetchone() is None:
+            _max = conn.execute(
+                "SELECT COALESCE(MAX(sort),-1) FROM categories "
+                "WHERE (scope='public' OR (scope='user' AND user_id=?))", (user_id,)
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO categories(scope,user_id,name,icon,sort) VALUES('user',?,?,?,?)",
+                (user_id, FALLBACK_CAT, "🥗", _max + 1),
+            )
+
+
+def _max_sort(conn: Connection, user_id: int) -> int:
+    return conn.execute(
+        "SELECT COALESCE(MAX(sort),-1) FROM categories "
+        "WHERE (scope='public' OR (scope='user' AND user_id=?))", (user_id,)
+    ).fetchone()[0]
 
 
 @router.post("")
-def create_category(body: CategoryIn, conn: Connection = Depends(get_db)):
-    """新增大类；同名 409；排到末尾。"""
+def create_category(body: CategoryIn,
+                    user: int = Query(1),
+                    public: bool = Query(False),
+                    conn: Connection = Depends(get_db)):
     name = body.name.strip()
     if not name:
         raise HTTPException(422, "名称不能为空")
-    if conn.execute("SELECT 1 FROM categories WHERE name=?", (name,)).fetchone():
-        raise HTTPException(409, "该大类已存在")
-    _max = conn.execute("SELECT COALESCE(MAX(sort),-1) FROM categories").fetchone()[0]
-    cur = conn.execute(
-        "INSERT INTO categories(name,icon,sort) VALUES(?,?,?)",
-        (name, body.icon or "🥗", _max + 1),
-    )
+
+    if public:
+        if _check_name_public(conn, name):
+            raise HTTPException(409, f"公共层已有「{name}」")
+        cur = conn.execute(
+            "INSERT INTO categories(scope,user_id,name,icon,sort) VALUES('public',1,?,?,?)",
+            (name, body.icon or "🥗", _max_sort(conn, user) + 1),
+        )
+    else:
+        if _check_name_public(conn, name):
+            raise HTTPException(409, f"公共层已有「{name}」")
+        if _check_name_private(conn, name, user):
+            raise HTTPException(409, "你已经加过这个大类了")
+        cur = conn.execute(
+            "INSERT INTO categories(scope,user_id,name,icon,sort) VALUES('user',?,?,?,?)",
+            (user, name, body.icon or "🥗", _max_sort(conn, user) + 1),
+        )
     return {"id": cur.lastrowid, "ok": True}
 
 
-@router.put("/{cid}")
-def update_category(cid: int, body: CategoryIn, conn: Connection = Depends(get_db)):
-    """改名/换图标；改名需级联更新引用了该大类的食材与冰箱项。"""
+def _get_row(conn: Connection, cid: int, user_id: int, admin: bool) -> Optional[dict]:
     row = conn.execute("SELECT * FROM categories WHERE id=?", (cid,)).fetchone()
     if not row:
+        return None
+    if row["scope"] == "public" and not admin:
+        raise HTTPException(403, "公共大类不能改，请联系管理员")
+    if row["scope"] == "user" and row["user_id"] != user_id:
+        raise HTTPException(403, "无权操作他人大类")
+    return row_to_dict(row)
+
+
+@router.put("/{cid}")
+def update_category(cid: int, body: CategoryIn,
+                    user: int = Query(1),
+                    admin: bool = Query(False),
+                    conn: Connection = Depends(get_db)):
+    row = _get_row(conn, cid, user, admin)
+    if not row:
         raise HTTPException(404, "大类不存在")
+
     name = body.name.strip()
     if not name:
         raise HTTPException(422, "名称不能为空")
-    if conn.execute("SELECT 1 FROM categories WHERE name=? AND id!=?", (name, cid)).fetchone():
-        raise HTTPException(409, "该大类已存在")
+
+    if name != row["name"]:
+        if _check_name_public(conn, name):
+            raise HTTPException(409, f"公共层已有「{name}」")
+        if _check_name_private(conn, name, user, exclude_id=cid):
+            raise HTTPException(409, "你已经加过这个大类了")
+
     old = row["name"]
     conn.execute(
         "UPDATE categories SET name=?, icon=? WHERE id=?", (name, body.icon or "🥗", cid)
     )
-    # 级联改名：把引用旧大类的食材/冰箱项迁移到新大类
+    # 级联改名：只动当前用户的 ingredients / fridge_items（它们 cat 字段存的是名字）
     if old != name:
-        conn.execute("UPDATE ingredients SET cat=? WHERE cat=?", (name, old))
-        conn.execute("UPDATE fridge_items SET cat=? WHERE cat=?", (name, old))
+        conn.execute(
+            "UPDATE ingredients SET cat=? WHERE user_id=? AND cat=?", (name, user, old)
+        )
+        conn.execute(
+            "UPDATE fridge_items SET cat=? WHERE user_id=? AND cat=?", (name, user, old)
+        )
     return {"id": cid, "ok": True}
 
 
 @router.post("/{cid}/move")
-def move_category(cid: int, body: CategoryMove, conn: Connection = Depends(get_db)):
-    """上下移动排序：与该方向相邻的大类交换 sort。"""
-    row = conn.execute("SELECT * FROM categories WHERE id=?", (cid,)).fetchone()
+def move_category(cid: int, body: CategoryMove,
+                  user: int = Query(1),
+                  admin: bool = Query(False),
+                  conn: Connection = Depends(get_db)):
+    row = _get_row(conn, cid, user, admin)
     if not row:
         raise HTTPException(404, "大类不存在")
     direction = -1 if body.dir == "up" else 1
-    # 相邻项：sort 严格大于（down）/小于（up）且最接近的
-    cmp = ">" if direction == 1 else "<"
+    cmp_ = ">" if direction == 1 else "<"
+    # 只在自己可见的（public + 自己 private）里找相邻项
     nxt = conn.execute(
-        f"SELECT * FROM categories WHERE sort {cmp} ? ORDER BY sort {'ASC' if direction == 1 else 'DESC'} LIMIT 1",
-        (row["sort"],),
+        f"SELECT * FROM categories "
+        f"WHERE (scope='public' AND sort {cmp_} ?) OR "
+        f"      (scope='user' AND user_id=? AND sort {cmp_} ?) "
+        f"ORDER BY sort {'ASC' if direction == 1 else 'DESC'} LIMIT 1",
+        (row["sort"], user, row["sort"]),
     ).fetchone()
     if not nxt:
-        return {"id": cid, "ok": True}  # 已在边界，无需移动
-    cid, csort, nid, nsort = cid, row["sort"], nxt["id"], nxt["sort"]
-    conn.execute("UPDATE categories SET sort=? WHERE id=?", (nsort, cid))
-    conn.execute("UPDATE categories SET sort=? WHERE id=?", (csort, nid))
+        return {"id": cid, "ok": True}
+    conn.execute("UPDATE categories SET sort=? WHERE id=?", (nxt["sort"], cid))
+    conn.execute("UPDATE categories SET sort=? WHERE id=?", (row["sort"], nxt["id"]))
     return {"id": cid, "ok": True}
 
 
 @router.delete("/{cid}")
-def delete_category(cid: int, conn: Connection = Depends(get_db)):
-    """删除大类；该大类下的食材/冰箱项退回兜底「其他」。"""
-    row = conn.execute("SELECT * FROM categories WHERE id=?", (cid,)).fetchone()
+def delete_category(cid: int,
+                    user: int = Query(1),
+                    admin: bool = Query(False),
+                    conn: Connection = Depends(get_db)):
+    row = _get_row(conn, cid, user, admin)
     if not row:
         raise HTTPException(404, "大类不存在")
     name = row["name"]
-    _ensure_fallback(conn)
-    conn.execute("UPDATE ingredients SET cat=? WHERE cat=?", (FALLBACK_CAT, name))
-    conn.execute("UPDATE fridge_items SET cat=? WHERE cat=?", (FALLBACK_CAT, name))
+    _ensure_fallback(conn, user)
+    # 兜底优先公共层；如果公共层没「其他」用自己私有层的
+    fb = conn.execute(
+        "SELECT name FROM categories "
+        "WHERE (scope='public' OR (scope='user' AND user_id=?)) AND name=? "
+        "LIMIT 1", (user, FALLBACK_CAT)
+    ).fetchone()
+    fb_name = fb["name"] if fb else FALLBACK_CAT
+    conn.execute(
+        "UPDATE ingredients SET cat=? WHERE user_id=? AND cat=?", (fb_name, user, name)
+    )
+    conn.execute(
+        "UPDATE fridge_items SET cat=? WHERE user_id=? AND cat=?", (fb_name, user, name)
+    )
     conn.execute("DELETE FROM categories WHERE id=?", (cid,))
     return {"id": cid, "ok": True}

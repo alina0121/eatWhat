@@ -2,7 +2,18 @@
 // 后端路由清单（FastAPI）：
 //   /recipes  /shops  /candidates  /fridge  /diners  /tips  /records  /weights  /configs
 // 派生数据（临期状态/计时elapsed/统计）由后端实时现算，前端只消费结果，不落库。
+// 多用户隔离：食材库 / 冰箱 / 待采购 / 候选已加 user_id，默认 user=1；
+//   当前用户存在 localStorage.curUser，管理端全量查询显式传 all_users/admin 参数。
 import req from '@/utils/request'
+
+/** 当前用户 id（localStorage 默认 1） */
+export const getCurUser = () => {
+  try {
+    const v = uni.getStorageSync('curUser')
+    const n = Number(v)
+    return Number.isFinite(n) && n > 0 ? n : 1
+  } catch (e) { return 1 }
+}
 
 export const recipeApi = {
   list: (source) => req.get(`/recipes${source ? `?source=${source}` : ''}`),
@@ -22,32 +33,42 @@ export const shopApi = {
 }
 
 export const fridgeApi = {
-  inStock: () => req.get('/fridge/in_stock'),
-  addStock: (data) => req.post('/fridge/in_stock', data),
-  updateStock: (id, data) => req.put(`/fridge/in_stock/${id}`, data),
-  delStock: (id) => req.del(`/fridge/in_stock/${id}`),
-  purchase: () => req.get('/fridge/purchase'),
-  addPurchase: (data) => req.post('/fridge/purchase', data),
-  updatePurchase: (id, data) => req.put(`/fridge/purchase/${id}`, data),
-  delPurchase: (id) => req.del(`/fridge/purchase/${id}`),
-  toStock: (id) => req.post(`/fridge/purchase/${id}/to-stock`)
+  inStock: (user = getCurUser()) => req.get(`/fridge/in_stock?user=${user}`),
+  addStock: (data, user = getCurUser()) => req.post(`/fridge/in_stock?user=${user}`, data),
+  updateStock: (id, data, user = getCurUser()) => req.put(`/fridge/in_stock/${id}?user=${user}`, data),
+  delStock: (id, user = getCurUser()) => req.del(`/fridge/in_stock/${id}?user=${user}`),
+  purchase: (user = getCurUser()) => req.get(`/fridge/purchase?user=${user}`),
+  addPurchase: (data, user = getCurUser()) => req.post(`/fridge/purchase?user=${user}`, data),
+  updatePurchase: (id, data, user = getCurUser()) => req.put(`/fridge/purchase/${id}?user=${user}`, data),
+  delPurchase: (id, user = getCurUser()) => req.del(`/fridge/purchase/${id}?user=${user}`),
+  toStock: (id, user = getCurUser()) => req.post(`/fridge/purchase/${id}/to-stock?user=${user}`)
 }
 
-// 食材库：菜谱选食材的独立来源（与冰箱库存解耦，单独维护）
+// 食材库：双层模型——公共（scope=public）+ 用户私有补录（scope=user）
+// 默认 list 返回合并视图（public + 自己的 user）；public_only=true 管理端只看公共
 export const ingredientApi = {
-  list: () => req.get('/ingredients'),
-  create: (data) => req.post('/ingredients', data),
-  update: (id, data) => req.put(`/ingredients/${id}`, data),
-  del: (id) => req.del(`/ingredients/${id}`)
+  list: (user = getCurUser(), publicOnly = false) =>
+    req.get(`/ingredients?user=${user}${publicOnly ? '&public_only=1' : ''}`),
+  create: (data, user = getCurUser(), public = false) =>
+    req.post(`/ingredients?user=${user}${public ? '&public=1' : ''}`, data),
+  update: (id, data, user = getCurUser(), admin = false) =>
+    req.put(`/ingredients/${id}?user=${user}${admin ? '&admin=1' : ''}`, data),
+  del: (id, user = getCurUser(), admin = false) =>
+    req.del(`/ingredients/${id}?user=${user}${admin ? '&admin=1' : ''}`)
 }
 
-// 食材大类：独立维护的实体（name/icon/sort），食材库/冰箱/编菜谱动态引用
+// 食材大类：同 ingredients 双层模型
 export const catApi = {
-  list: () => req.get('/categories'),
-  create: (data) => req.post('/categories', data),
-  update: (id, data) => req.put(`/categories/${id}`, data),
-  move: (id, dir) => req.post(`/categories/${id}/move`, { dir }),
-  del: (id) => req.del(`/categories/${id}`)
+  list: (user = getCurUser(), publicOnly = false) =>
+    req.get(`/categories?user=${user}${publicOnly ? '&public_only=1' : ''}`),
+  create: (data, user = getCurUser(), public = false) =>
+    req.post(`/categories?user=${user}${public ? '&public=1' : ''}`, data),
+  update: (id, data, user = getCurUser(), admin = false) =>
+    req.put(`/categories/${id}?user=${user}${admin ? '&admin=1' : ''}`, data),
+  move: (id, dir, user = getCurUser(), admin = false) =>
+    req.post(`/categories/${id}/move?user=${user}${admin ? '&admin=1' : ''}`, { dir }),
+  del: (id, user = getCurUser(), admin = false) =>
+    req.del(`/categories/${id}?user=${user}${admin ? '&admin=1' : ''}`)
 }
 
 // 封面图库：管理员维护的固定封面（emoji+渐变），菜谱编辑时点选，渲染用之
@@ -61,8 +82,9 @@ export const coverApi = {
 
 export const candidateApi = {
   list: () => req.get('/candidates'),
-  add: (kind, refId) => req.post('/candidates', { kind, ref_id: refId }),
-  remove: (id) => req.del(`/candidates/${id}`),
+  add: (kind, refId, user = getCurUser()) =>
+    req.post(`/candidates?user=${user}`, { kind, ref_id: refId }),
+  remove: (id, user = getCurUser()) => req.del(`/candidates/${id}?user=${user}`),
   timerStart: (id) => req.post(`/candidates/${id}/timer/start`),
   timerPause: (id) => req.post(`/candidates/${id}/timer/pause`),
   timerCancel: (id) => req.post(`/candidates/${id}/timer/cancel`)

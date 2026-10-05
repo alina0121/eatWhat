@@ -15,7 +15,7 @@
 """
 import json
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlite3 import Connection
 
@@ -29,21 +29,21 @@ class CandidateIn(BaseModel):
     ref_id: int        # 关联菜谱/餐厅 id
 
 
-def _ingest_subs(conn: Connection, ref_id: int) -> str:
-    """根据菜谱食材与在库比对，计算出缺货代入的待采购映射（JSON 字符串）。
+def _ingest_subs(conn: Connection, ref_id: int, user_id: int) -> str:
+    """根据菜谱食材与**某用户**冰箱比对，计算缺货代入的待采购映射（JSON 字符串）。
 
-    返回的 subs 形如 {"name\x00unit": 数量}，入待采购并记录到候选上，
-    以便移除时精确回退。
+    待采购也按 user_id 隔离，用 Python upsert（不依赖 SQLite ON CONFLICT 约束）。
     """
     rec = conn.execute("SELECT ing FROM recipes WHERE id=?", (ref_id,)).fetchone()
     if not rec:
         return "{}"
     ing = jload(rec["ing"])
 
-    # 汇总在库：{(name, unit): 总量}
+    # 该用户的在库总量
     in_stock = {}
     for r in conn.execute(
-        "SELECT name, unit, SUM(qty) AS total FROM fridge_items GROUP BY name, unit"
+        "SELECT name, unit, SUM(qty) AS total FROM fridge_items "
+        "WHERE user_id=? GROUP BY name, unit", (user_id,)
     ).fetchall():
         in_stock[(r["name"], r["unit"])] = r["total"]
 
@@ -52,37 +52,42 @@ def _ingest_subs(conn: Connection, ref_id: int) -> str:
         name, unit = it.get("name", ""), it.get("unit", "份")
         need = it.get("qty", 1)
         have = in_stock.get((name, unit), 0.0)
-        deficit = max(0.0, need - have)      # 缺多少补多少
+        deficit = max(0.0, need - have)
         if deficit <= 0:
             continue
-        # 累计到待采购（同名同单位累加），并记入 subs 供回退
-        conn.execute(
-            "INSERT INTO purchase(name,qty,unit) VALUES(?,?,?) "
-            "ON CONFLICT(name,unit) DO UPDATE SET qty=qty+excluded.qty",
-            (name, deficit, unit),
-        )
+        # 待采购 upsert（同用户同名同单位累加）
+        row = conn.execute(
+            "SELECT id FROM purchase WHERE user_id=? AND name=? AND unit=?",
+            (user_id, name, unit),
+        ).fetchone()
+        if row:
+            conn.execute("UPDATE purchase SET qty=qty+? WHERE id=?", (deficit, row["id"]))
+        else:
+            conn.execute(
+                "INSERT INTO purchase(user_id,name,qty,unit) VALUES(?,?,?,?)",
+                (user_id, name, deficit, unit),
+            )
         key = f"{name}\x00{unit}"
         subs[key] = subs.get(key, 0.0) + deficit
 
     return jdump(subs)
 
 
-def _subtract_subs(conn: Connection, subs: dict):
-    """按量回退待采购：候选移除时调用。扣到 0 即删除该行，避免残留 0 条。"""
+def _subtract_subs(conn: Connection, subs: dict, user_id: int):
+    """按量回退**某用户**的待采购。"""
     for key, qty in subs.items():
         name, unit = key.split("\x00", 1)
         row = conn.execute(
-            "SELECT qty FROM purchase WHERE name=? AND unit=?", (name, unit)
+            "SELECT id, qty FROM purchase WHERE user_id=? AND name=? AND unit=?",
+            (user_id, name, unit),
         ).fetchone()
         if not row:
             continue
         remain = row["qty"] - qty
         if remain <= 0:
-            conn.execute("DELETE FROM purchase WHERE name=? AND unit=?", (name, unit))
+            conn.execute("DELETE FROM purchase WHERE id=?", (row["id"],))
         else:
-            conn.execute(
-                "UPDATE purchase SET qty=? WHERE name=? AND unit=?", (remain, name, unit)
-            )
+            conn.execute("UPDATE purchase SET qty=? WHERE id=?", (remain, row["id"]))
 
 
 def _enrich_track(cand: dict, conn: Connection) -> dict:
@@ -107,10 +112,12 @@ def list_candidates(conn: Connection = Depends(get_db)):
 
 
 @router.post("")
-def add_candidate(body: CandidateIn, conn: Connection = Depends(get_db)):
+def add_candidate(body: CandidateIn,
+                  user: int = Query(1, description="当前用户，默认 1"),
+                  conn: Connection = Depends(get_db)):
     """加入候选。整个方法在一个事务里（get_db 提交/回滚）：
 
-    - kind=recipe：取菜谱名/表情，计算缺货代入待采购并记录 subs。
+    - kind=recipe：取菜谱名/表情，计算**该用户**的缺货代入待采购并记录 subs。
     - kind=shop ：仅入候选，不参与采购。
     """
     kind = body.kind
@@ -121,7 +128,7 @@ def add_candidate(body: CandidateIn, conn: Connection = Depends(get_db)):
         if not rec:
             raise HTTPException(404, "菜谱不存在")
         name, em = rec["name"], rec["em"]
-        subs = _ingest_subs(conn, ref_id)
+        subs = _ingest_subs(conn, ref_id, user)
     elif kind == "shop":
         sh = conn.execute("SELECT name FROM shops WHERE id=?", (ref_id,)).fetchone()
         if not sh:
@@ -130,7 +137,6 @@ def add_candidate(body: CandidateIn, conn: Connection = Depends(get_db)):
     else:
         raise HTTPException(400, "kind 须为 recipe 或 shop")
 
-    # 重复加入防护：同一 ref_id 同一 kind 只允许在吃这些里出现一次
     dup = conn.execute(
         "SELECT id FROM eat_inbox WHERE kind=? AND ref_id=?", (kind, ref_id)
     ).fetchone()
@@ -145,16 +151,15 @@ def add_candidate(body: CandidateIn, conn: Connection = Depends(get_db)):
 
 
 @router.delete("/{cid}")
-def remove_candidate(cid: int, conn: Connection = Depends(get_db)):
-    """移除候选：回退其代入的待采购量（餐厅无代入则无影响），同事务保证一致。
-
-    同时清理该候选上的计时记录。
-    """
+def remove_candidate(cid: int,
+                     user: int = Query(1, description="当前用户，默认 1"),
+                     conn: Connection = Depends(get_db)):
+    """移除候选：回退**该用户**代入的待采购量（餐厅无代入则无影响），同事务保证一致。"""
     row = conn.execute("SELECT * FROM eat_inbox WHERE id=?", (cid,)).fetchone()
     if not row:
         raise HTTPException(404, "候选不存在")
     subs = jload(row["subs"], default={})
-    _subtract_subs(conn, subs)                       # 按量回退
+    _subtract_subs(conn, subs, user)
     conn.execute("DELETE FROM tracks WHERE inbox_id=?", (cid,))
     conn.execute("DELETE FROM eat_inbox WHERE id=?", (cid,))
     return {"id": cid, "ok": True}

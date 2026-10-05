@@ -151,8 +151,13 @@ def delete_recipe(rid: int, conn: Connection = Depends(get_db)):
 
 @router.post("/{rid}/copy-to-mine")
 def copy_to_mine(rid: int, conn: Connection = Depends(get_db)):
-    """参考菜谱「存进我的菜谱」：复制一份 source=my 的新记录。"""
+    """参考菜谱「存进我的菜谱」：复制一份 source=my 的新记录。
+
+    若已存在同名的「我的菜谱」，返回 409 提示前端。
+    """
     rec = _get(conn, rid)
+    if _check_name_unique(conn, rec["name"]):
+        raise HTTPException(409, f"已存在同名菜谱「{rec['name']}」，请换个名字或直接编辑它")
     cur = conn.execute(
         "INSERT INTO recipes(source,name,em,cover,time,diff,tags,ing,steps) "
         "VALUES('my',?,?,?,?,?,?,?,?)",

@@ -144,49 +144,43 @@
           </view>
         </template>
 
-        <!-- ============ 4. 食材库 & 大类 ============ -->
-        <template v-if="sec === 'ing'">
+        <!-- ============ 4. 食材大类（只管公共层 scope=public） ============ -->
+        <template v-if="sec === 'cat'">
           <view class="sec-h">
-            <text class="sh-t">食材库 & 大类</text>
-            <view class="ingu-tabs">
-              <text class="ingtab" :class="{ on: ingTab === 'ing' }" @click="ingTab = 'ing'">食材</text>
-              <text class="ingtab" :class="{ on: ingTab === 'cat' }" @click="ingTab = 'cat'">大类</text>
-            </view>
-            <view class="sec-act"><button class="pbtn" @click="openIngAdd">＋ {{ ingTab === 'cat' ? '大类' : '新增' }}</button></view>
+            <text class="sh-t">食材大类</text>
+            <text class="sh-s">公共大类池；用户端会自动合并自己补录的</text>
+            <view class="sec-act"><button class="pbtn" @click="openModal('cat')">＋ 新增大类</button></view>
           </view>
-          <view class="fbar" v-if="ingTab === 'ing'">
-            <input class="fsearch" v-model="ingQ" placeholder="按食材名搜索…" />
-            <text class="fcount">共 {{ filterIngs.length }} 条</text>
+          <view class="row card" v-for="c in cats" :key="c.id">
+            <text class="cic">{{ c.icon }}</text>
+            <text class="inm">{{ c.name }}</text>
+            <view class="sp"></view>
+            <button class="pbtn ghost" @click="moveCat(c, 'up')">↑</button>
+            <button class="pbtn ghost" @click="moveCat(c, 'down')">↓</button>
+            <button class="pbtn ghost" @click="editCat(c)">✎</button>
+            <button class="pbtn danger" @click="delCat(c)">✕</button>
           </view>
-          <!-- 食材 Tab -->
-          <template v-if="ingTab === 'ing'">
-            <view class="grp" v-for="g in ingGroups" :key="g.cat">
-              <text class="grp-t">{{ g.cat }}</text>
-              <view class="row card" v-for="it in g.items" :key="it.id">
-                <text class="inm">{{ it.name }}</text>
-                <view class="sp"></view>
-                <button class="pbtn ghost" @click="openIngEdit(it)">✎</button>
-                <button class="pbtn danger" @click="delIng(it)">✕</button>
-              </view>
-            </view>
-            <text class="none" v-if="!filterIngs.length">食材库为空</text>
-          </template>
-          <!-- 大类 Tab -->
-          <template v-else>
-            <view class="row card" v-for="c in cats" :key="c.id">
-              <text class="cic">{{ c.icon }}</text>
-              <text class="inm">{{ c.name }}</text>
-              <view class="sp"></view>
-              <button class="pbtn ghost" @click="moveCat(c, 'up')">↑</button>
-              <button class="pbtn ghost" @click="moveCat(c, 'down')">↓</button>
-              <button class="pbtn ghost" @click="editCat(c)">✎</button>
-              <button class="pbtn danger" @click="delCat(c)">✕</button>
-            </view>
-            <text class="none" v-if="!cats.length">还没有大类</text>
-          </template>
+          <text class="none" v-if="!cats.length">还没有公共大类</text>
         </template>
 
-        <!-- 餐厅（个人收藏）不再纳入管理端：看个人数据去用户端 -->
+        <!-- ============ 5. 食材库（只管公共层 scope=public） ============ -->
+        <template v-if="sec === 'ing'">
+          <view class="sec-h">
+            <text class="sh-t">食材库</text>
+            <text class="sh-s">公共食材池；用户补录的不在管理端出现</text>
+            <view class="sec-act"><button class="pbtn" @click="openModal('ing')">＋ 新录</button></view>
+          </view>
+          <view class="grp" v-for="g in ingGroups" :key="g.cat">
+            <text class="grp-t">{{ g.cat }}</text>
+            <view class="row card" v-for="it in g.items" :key="it.id">
+              <text class="inm">{{ it.name }}</text>
+              <view class="sp"></view>
+              <button class="pbtn ghost" @click="openIngEdit(it)">✎</button>
+              <button class="pbtn danger" @click="delIng(it)">✕</button>
+            </view>
+          </view>
+          <text class="none" v-if="!ingredients.length">公共食材库为空</text>
+        </template>
 
         <!-- ============ 6. 系统配置 ============ -->
         <template v-if="sec === 'config'">
@@ -252,17 +246,19 @@
           </view>
         </template>
 
-        <!-- 食材 / 大类 -->
+        <!-- 公共食材大类 -->
         <template v-if="modal.mode === 'cat'">
-          <text class="d-title">{{ form.id ? '改大类' : '新增大类' }}</text>
+          <text class="d-title">{{ form.id ? '改公共大类' : '录公共大类' }}</text>
           <input v-model="form.name" placeholder="大类名，如：豆制品" class="di" />
           <view class="d-sub">图标点选</view>
           <view class="icon-grid">
             <view v-for="ic in catIcons" :key="ic" class="icell" :class="{ on: form.icon === ic }" @click="form.icon = ic">{{ ic }}</view>
           </view>
         </template>
+
+        <!-- 公共食材 -->
         <template v-if="modal.mode === 'ing'">
-          <text class="d-title">{{ form.id ? '改食材' : '新增食材' }}</text>
+          <text class="d-title">{{ form.id ? '改公共食材' : '录公共食材' }}</text>
           <input v-model="form.name" placeholder="食材名，如：老抽" class="di" />
           <view class="d-sub">归类到大类</view>
           <view class="chip-row">
@@ -314,7 +310,8 @@ export default {
         { k: 'tips', ic: '👨‍🍳', t: '厨房技巧审核' },
         { k: 'ref', ic: '📚', t: '参考菜谱' },
         { k: 'covers', ic: '🖼️', t: '封面图库' },
-        { k: 'ing', ic: '🧺', t: '食材库 & 大类' },
+        { k: 'cat', ic: '🗂️', t: '食材大类' },
+        { k: 'ing', ic: '🧺', t: '食材库' },
         { k: 'config', ic: '⚙️', t: '系统配置' }
       ],
       DEFAULT_GRAD, grads, catIcons,
@@ -324,15 +321,13 @@ export default {
       // 统计（仅公共资源计数）
       stats: { cards: {} },
       // 各列表数据
-      tips: [], refs: [], covers: [], ingredients: [], cats: [], users: [],
+      tips: [], refs: [], covers: [], cats: [], ingredients: [], users: [],
       audit: true, expiry: 3,
-      ingTab: 'ing',
       // 搜索 / 筛选 / 分页
       tipQ: '', tipSt: 'all', tipLimit: 20, tipSts: [
         { k: 'all', t: '全部' }, { k: 'pending', t: '待审核' }, { k: 'approved', t: '已公开' }, { k: 'rejected', t: '未通过' }
       ],
       refQ: '', refLimit: 20,
-      ingQ: '',
       modal: { show: false, mode: '', id: null },
       form: {}
     }
@@ -367,17 +362,12 @@ export default {
       return this.refs.filter((r) => !q || String(r.name || '').toLowerCase().includes(q))
     },
     shownRefs() { return this.filterRefs.slice(0, this.refLimit) },
-    // 食材：关键词
-    filterIngs() {
-      const q = this.ingQ.trim().toLowerCase()
-      return this.ingredients.filter((x) => !q || String(x.name || '').toLowerCase().includes(q))
-    },
-    // 食材按大类分组（顺序跟随大类编排）
+    // 公共食材按大类分组（展示顺序跟随 cats 排序）
     ingGroups() {
       const catsOrder = {}
       this.cats.forEach((c) => { catsOrder[c.name] = true })
       const byCat = {}
-      this.filterIngs.forEach((it) => { (byCat[it.cat] = byCat[it.cat] || []).push(it) })
+      this.ingredients.forEach((it) => { (byCat[it.cat] = byCat[it.cat] || []).push(it) })
       const keyed = Object.keys(byCat).sort((a, b) => {
         const oa = a in catsOrder, ob = b in catsOrder
         if (oa && ob) return this.cats.findIndex((c) => c.name === a) - this.cats.findIndex((c) => c.name === b)
@@ -412,20 +402,21 @@ export default {
     async loadAll() {
       if (!this.isAdmin) return
       try {
-        const [tips, refs, covers, ingredients, cats, users, st] = await Promise.all([
+        // 食材库 / 大类双层模型：管理端只读公共层（scope=public），用户端合并自己的补录
+        const [tips, refs, covers, cats, ingredients, users, st] = await Promise.all([
           tipApi.list(this.curName, true),
           recipeApi.list('admin'),
           coverApi.list(),
-          ingredientApi.list(),
-          catApi.list(),
+          catApi.list(1, true),
+          ingredientApi.list(1, true),
           adminApi.users(),
           adminApi.stats()
         ])
         this.tips = tips
         this.refs = refs
         this.covers = covers.map((c) => ({ ...c, grad: c.grad || DEFAULT_GRAD }))
-        this.ingredients = ingredients.map((x) => ({ id: x.id, name: x.name, cat: x.cat || '其他' }))
         this.cats = cats.map((c) => ({ id: c.id, name: c.name, icon: c.icon || '🥗' }))
+        this.ingredients = ingredients.map((x) => ({ id: x.id, name: x.name, cat: x.cat || '其他' }))
         this.users = users
         this.stats = st || this.stats
         // 配置
@@ -447,6 +438,20 @@ export default {
       if (u.id === 1) return uni.showToast({ title: '内置管理员不可删除', icon: 'none' })
       uni.showModal({ title: '删除用户', content: `删除「${u.name}」？`, confirmText: '删除', confirmColor: '#e64340',
         success: (res) => { if (res.confirm) adminApi.delUser(u.id).then(this.loadAll) } })
+    },
+    // —— 食材大类（只管公共层） ——
+    openCatAdd() { this.form = { id: null, name: '', icon: '🥗' }; this.modal = { show: true, mode: 'cat', id: null } },
+    editCat(c) { this.form = { id: c.id, name: c.name, icon: c.icon }; this.modal = { show: true, mode: 'cat', id: c.id } },
+    moveCat(c, dir) { catApi.move(c.id, dir, 1, true).then(this.loadAll) },
+    delCat(c) {
+      uni.showModal({ title: '删除公共大类', content: `删除「${c.name}」？引用它的食材会退回「其他」。`, confirmText: '删除', confirmColor: '#e64340',
+        success: (res) => { if (res.confirm) catApi.del(c.id, 1, true).then(this.loadAll) } })
+    },
+    // —— 食材库（只管公共层） ——
+    openIngEdit(it) { this.form = { id: it.id, name: it.name, cat: it.cat }; this.modal = { show: true, mode: 'ing', id: it.id } },
+    delIng(it) {
+      uni.showModal({ title: '移除公共食材', content: `从公共食材库移除「${it.name}」？用户自己补录的不受影响。`, confirmText: '移除', confirmColor: '#e64340',
+        success: (res) => { if (res.confirm) ingredientApi.del(it.id, 1, true).then(this.loadAll) } })
     },
     // —— 技巧审核 ——
     statusText(s) { return { pending: '⏳ 待审核', approved: '✅ 已公开', rejected: '🚫 未通过' }[s] || '' },
@@ -476,22 +481,13 @@ export default {
       uni.showModal({ title: '删除封面', content: `删除「${c.name || c.emoji}」？用它的菜谱会回到默认封面色。`, confirmText: '删除', confirmColor: '#e64340',
         success: (res) => { if (res.confirm) coverApi.del(c.id).then(this.loadAll) } })
     },
-    // —— 食材 / 大类 ——
-    openIngAdd() {
-      if (this.ingTab === 'cat') this.form = { id: null, name: '', icon: '🥗' }
-      else this.form = { id: null, name: '', cat: (this.cats[0] && this.cats[0].name) || '其他', icon: '🥗' }
-      this.modal = { show: true, mode: this.ingTab === 'cat' ? 'cat' : 'ing', id: null }
-    },
+    // —— 食材大类（全局共享） ——
+    openCatAdd() { this.form = { id: null, name: '', icon: '🥗' }; this.modal = { show: true, mode: 'cat', id: null } },
     editCat(c) { this.form = { id: c.id, name: c.name, icon: c.icon }; this.modal = { show: true, mode: 'cat', id: c.id } },
     moveCat(c, dir) { catApi.move(c.id, dir).then(this.loadAll) },
     delCat(c) {
       uni.showModal({ title: '删除大类', content: `删除「${c.name}」？该大类下食材/冰箱项退回「其他」。`, confirmText: '删除', confirmColor: '#e64340',
         success: (res) => { if (res.confirm) catApi.del(c.id).then(this.loadAll) } })
-    },
-    openIngEdit(it) { this.form = { id: it.id, name: it.name, cat: it.cat }; this.modal = { show: true, mode: 'ing', id: it.id } },
-    delIng(it) {
-      uni.showModal({ title: '移除食材', content: `从食材库移除「${it.name}」？不影响已用的菜谱/库存。`, confirmText: '移除', confirmColor: '#e64340',
-        success: (res) => { if (res.confirm) ingredientApi.del(it.id).then(this.loadAll) } })
     },
     // —— 配置 ——
     setAudit(e) { this.audit = e.detail.value; configApi.set('audit_enabled', this.audit ? '1' : '0') },
@@ -509,6 +505,8 @@ export default {
     openModal(mode) {
       if (mode === 'cover') { this.form = { id: null, emoji: '🍽', name: '', grad: DEFAULT_GRAD } }
       else if (mode === 'ref') { this.form = { id: null, name: '', em: '🍲', time: 20, diff: '简单', tagsText: '', ingText: '', stepsText: '', cover: '' } }
+      else if (mode === 'cat') { this.form = { id: null, name: '', icon: '🥗' } }
+      else if (mode === 'ing') { this.form = { id: null, name: '', cat: (this.cats[0] && this.cats[0].name) || '其他' } }
       this.modal = { show: true, mode, id: null }
     },
     closeModal() { this.modal = { show: false, mode: '', id: null } },
@@ -524,13 +522,19 @@ export default {
       if (mode === 'cat') {
         const name = (this.form.name || '').trim()
         if (!name) return uni.showToast({ title: '名称不能为空', icon: 'none' })
-        const p = this.form.id ? catApi.update(this.form.id, { name, icon: this.form.icon }) : catApi.create({ name, icon: this.form.icon })
+        const body = { name, icon: this.form.icon || '🥗' }
+        const p = this.form.id
+          ? catApi.update(this.form.id, body, 1, true)
+          : catApi.create(body, 1, true)
         return p.then(() => { this.closeModal(); this.loadAll() }).catch((e) => uni.showToast({ title: e.message, icon: 'none' }))
       }
       if (mode === 'ing') {
         const name = (this.form.name || '').trim()
         if (!name) return uni.showToast({ title: '名称不能为空', icon: 'none' })
-        const p = this.form.id ? ingredientApi.update(this.form.id, { name, cat: this.form.cat }) : ingredientApi.create({ name, cat: this.form.cat })
+        const body = { name, cat: this.form.cat || '其他' }
+        const p = this.form.id
+          ? ingredientApi.update(this.form.id, body, 1, true)
+          : ingredientApi.create(body, 1, true)
         return p.then(() => { this.closeModal(); this.loadAll() }).catch((e) => uni.showToast({ title: e.message, icon: 'none' }))
       }
       if (mode === 'user') {
