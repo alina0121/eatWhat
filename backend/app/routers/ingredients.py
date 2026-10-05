@@ -21,6 +21,7 @@ router = APIRouter(prefix="/ingredients", tags=["ingredients"])
 class IngredientIn(BaseModel):
     name: str
     cat: str = "其他"
+    icon: str = ""  # 独立 emoji 图标（空=列表渲染回退用大类 icon）
 
 
 def _merge_rows(conn: Connection, user_id: int) -> list:
@@ -88,8 +89,8 @@ def create_ingredient(body: IngredientIn,
         if _check_name_public(conn, name):
             raise HTTPException(409, f"公共库已有「{name}」")
         cur = conn.execute(
-            "INSERT INTO ingredients(scope,user_id,name,cat) VALUES('public',1,?,?)",
-            (name, body.cat),
+            "INSERT INTO ingredients(scope,user_id,name,cat,icon) VALUES('public',1,?,?,?)",
+            (name, body.cat, body.icon or ''),
         )
     else:
         # 用户补录：不能跟公共重名，也不能自己已有
@@ -98,8 +99,8 @@ def create_ingredient(body: IngredientIn,
         if _check_name_private(conn, name, user):
             raise HTTPException(409, "你已经加过这个食材了")
         cur = conn.execute(
-            "INSERT INTO ingredients(scope,user_id,name,cat) VALUES('user',?,?,?)",
-            (user, name, body.cat),
+            "INSERT INTO ingredients(scope,user_id,name,cat,icon) VALUES('user',?,?,?,?)",
+            (user, name, body.cat, body.icon or ''),
         )
     return {"id": cur.lastrowid, "ok": True}
 
@@ -130,7 +131,7 @@ def update_ingredient(iid: int, body: IngredientIn,
             raise HTTPException(409, "你已经加过这个食材了")
 
     conn.execute(
-        "UPDATE ingredients SET name=?, cat=? WHERE id=?", (name, body.cat, iid)
+        "UPDATE ingredients SET name=?, cat=?, icon=? WHERE id=?", (name, body.cat, body.icon or '', iid)
     )
     return {"id": iid, "ok": True}
 

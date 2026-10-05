@@ -72,8 +72,8 @@
       "style": { "navigationBarTitleText": "食材库", "navigationStyle": "custom" }
     },
     {
-      "path": "pages/mine-covers/mine-covers",
-      "style": { "navigationBarTitleText": "封面图库", "navigationStyle": "custom" }
+      "path": "pages/mine-tastes/mine-tastes",
+      "style": { "navigationBarTitleText": "口味标签", "navigationStyle": "custom" }
     },
     {
       "path": "pages/admin/admin",

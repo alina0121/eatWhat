@@ -21,8 +21,9 @@
         <template v-if="tab === 'ing'">
           <text class="tip" v-if="!groups.length">食材库还没内容，点「＋ 新增」添加，或直接在编菜谱时用「＋ 收录」。</text>
           <view class="grp" v-for="g in groups" :key="g.cat">
-            <text class="grp-t">{{ g.cat }}</text>
+            <text class="grp-t">{{ catIcon(g.cat) }} {{ g.cat }}</text>
             <view class="card grow" v-for="it in g.items" :key="it.id">
+              <text class="iic">{{ ingIcon(it) }}</text>
               <text class="iname">{{ it.name }}</text>
               <text class="sp"></text>
               <text class="op" @tap="openEditIng(it)">✎ 改</text>
@@ -61,13 +62,20 @@
           </view>
         </template>
 
-        <!-- 食材模式：名称 + 归类到大类 -->
+        <!-- 食材模式：名称 + emoji 图标 + 归类到大类 -->
         <template v-else>
           <input v-model="form.name" placeholder="食材名，如：老抽" class="dfi" :focus="form.show" />
-          <text class="d-sub">归类到大类</text>
-          <view class="cat-wrap">
-            <view v-for="c in cats" :key="c.id" class="chip" :class="{ on: form.cat === c.name }" @tap="form.cat = c.name">{{ c.icon }} {{ c.name }}</view>
+          <text class="d-sub">图标 <text class="t-12">选食材专属 emoji（空则用大类图标）</text></text>
+          <view class="icon-grid">
+            <view class="icell" :class="{ on: !form.icon }" @tap="form.icon = ''">✕</view>
+            <view v-for="ic in icons" :key="ic" class="icell" :class="{ on: form.icon === ic }" @tap="form.icon = ic">{{ ic }}</view>
           </view>
+          <text class="d-sub">归类到大类</text>
+          <scroll-view scroll-x class="cat-scroll-x">
+            <view class="cat-wrap">
+              <view v-for="c in cats" :key="c.id" class="chip" :class="{ on: form.cat === c.name }" @tap="form.cat = c.name">{{ c.icon }} {{ c.name }}</view>
+            </view>
+          </scroll-view>
         </template>
 
         <view class="d-btns">
@@ -80,17 +88,16 @@
 </template>
 
 <script>
-import { ingredientApi, catApi } from '@/api'
+import { ingredientApi, catApi, configApi } from '@/api'
 
-// 大类图标候选（Emoji 池，供新增大类点选）
-const icons = ['🥬', '🍎', '🥩', '🦐', '🍄', '🥚', '🍚', '🧂', '🥗', '🌰', '🫘', '🧀', '🍞', '🍜', '🥛', '🌶', '🥜', '🍇']
+const DEFAULT_ING_ICONS = ['🥬', '🥕', '🥦', '🥒', '🌽', '🍅', '🥑', '🍎', '🍌', '🥩', '🥚', '🦐', '🦞', '🐟', '🧀', '🥛', '🧂', '🌶', '🫚', '🧄', '🥜', '🍠', '🥔']
 
 export default {
   data() {
     return {
-      tab: 'ing', icons,
+      tab: 'ing', icons: [...DEFAULT_ING_ICONS],
       cats: [],        // [{id,name,icon,sort}] 大类，动态加载
-      list: [],        // [{id,name,cat}] 食材
+      list: [],        // [{id,name,cat,icon}] 食材
       form: { show: false, mode: 'ing', id: null, name: '', cat: '其他', icon: '🥗' }
     }
   },
@@ -115,18 +122,35 @@ export default {
   methods: {
     async load() {
       try {
-        const [cats, list] = await Promise.all([catApi.list(), ingredientApi.list()])
+        const [cats, list, pool] = await Promise.all([catApi.list(), ingredientApi.list(), configApi.get('ingredient_icon_pool').catch(() => ({ value: '' }))])
         this.cats = cats.map((c) => ({ id: c.id, name: c.name, icon: c.icon || '🥗', sort: c.sort }))
-        this.list = list.map((x) => ({ id: x.id, name: x.name, cat: x.cat || '其他' }))
+        this.list = list.map((x) => ({ id: x.id, name: x.name, cat: x.cat || '其他', icon: x.icon || '' }))
+        // 从配置读食材图标池 ingredient_icon_pool；空/失败回退本地 DEFAULT_ING_ICONS
+        const v = pool.value || ''
+        if (v) {
+          const arr = v.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+          if (arr.length) this.icons = arr
+        }
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
     openAdd() {
       if (this.tab === 'cat') this.form = { show: true, mode: 'cat', id: null, name: '', cat: '其他', icon: '🥗' }
-      else this.form = { show: true, mode: 'ing', id: null, name: '', cat: this.firstCat(), icon: '🥗' }
+      else this.form = { show: true, mode: 'ing', id: null, name: '', cat: this.firstCat(), icon: '' }
     },
-    openEditIng(it) { this.form = { show: true, mode: 'ing', id: it.id, name: it.name, cat: it.cat, icon: '🥗' } },
+    openEditIng(it) { this.form = { show: true, mode: 'ing', id: it.id, name: it.name, cat: it.cat, icon: it.icon || '' } },
     openEditCat(c) { this.form = { show: true, mode: 'cat', id: c.id, name: c.name, cat: '其他', icon: c.icon } },
     firstCat() { return (this.cats[0] && this.cats[0].name) || '其他' },
+    // 食材图标：优先食材自身 icon，空则回退大类 icon
+    ingIcon(it) {
+      if (it.icon) return it.icon
+      const c = this.cats.find((c) => c.name === it.cat)
+      return (c && c.icon) || '🥗'
+    },
+    // 分组标题图标 = 大类 icon
+    catIcon(catName) {
+      const c = this.cats.find((c) => c.name === catName)
+      return (c && c.icon) || '🥗'
+    },
     async save() {
       const name = (this.form.name || '').trim()
       if (!name) return uni.showToast({ title: '名称不能为空', icon: 'none' })
@@ -135,8 +159,8 @@ export default {
           if (this.form.id) await catApi.update(this.form.id, { name, icon: this.form.icon })
           else await catApi.create({ name, icon: this.form.icon })
         } else {
-          if (this.form.id) await ingredientApi.update(this.form.id, { name, cat: this.form.cat })
-          else await ingredientApi.create({ name, cat: this.form.cat })
+          if (this.form.id) await ingredientApi.update(this.form.id, { name, cat: this.form.cat, icon: this.form.icon || '' })
+          else await ingredientApi.create({ name, cat: this.form.cat, icon: this.form.icon || '' })
         }
         this.form.show = false
         this.load()
@@ -189,6 +213,7 @@ export default {
 .grow { display:flex; align-items:center; gap:12rpx; padding:20rpx 24rpx; margin-bottom:12rpx; }
 .cgrow { display:flex; align-items:center; gap:14rpx; padding:18rpx 24rpx; margin-bottom:12rpx; }
 .cic { font-size:34rpx; }
+.iic { font-size:34rpx; }
 .iname { font-weight:600; font-size:28rpx; }
 .sp { flex:1; }
 .op { color:var(--brand); font-size:24rpx; padding:4rpx 8rpx; }
@@ -201,10 +226,11 @@ export default {
 .d-sub { font-size:24rpx; color:var(--text-2); display:block; margin:8rpx 0 12rpx; }
 .dfi { background:var(--bg); border-radius:12rpx; height:84rpx; line-height:84rpx; padding:0 16rpx; margin-bottom:16rpx; font-size:28rpx; width:100%; box-sizing:border-box; color:var(--text); }
 .d-btns { display:flex; gap:16rpx; justify-content:flex-end; margin-top:8rpx; }
-.icon-grid { display:grid; grid-template-columns:repeat(6, 1fr); gap:12rpx; }
-.icell { aspect-ratio:1; display:flex; align-items:center; justify-content:center; font-size:40rpx; background:var(--bg); border-radius:12rpx; border:2rpx solid transparent; }
+.icon-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:10rpx; max-height:200rpx; overflow-y:auto; align-content:start; }
+.icell { height:76rpx; display:flex; align-items:center; justify-content:center; font-size:40rpx; background:var(--bg); border-radius:12rpx; border:2rpx solid transparent; }
 .icell.on { border-color:var(--brand); background:#efeaff; }
-.cat-wrap { display:flex; gap:12rpx; flex-wrap:wrap; }
-.chip { font-size:24rpx; color:var(--text-2); background:var(--bg); border:1rpx solid var(--border); border-radius:999rpx; padding:10rpx 20rpx; }
+.cat-scroll-x { height: 124rpx; white-space: nowrap; }
+.cat-wrap { display: grid; grid-template-rows: repeat(2, 56rpx); grid-auto-flow: column; grid-auto-columns: max-content; gap: 12rpx 10rpx; padding-right: 8rpx; }
+.chip { font-size:24rpx; color:var(--text-2); background:var(--bg); border:1rpx solid var(--border); border-radius:999rpx; padding:10rpx 20rpx; white-space:nowrap; }
 .chip.on { background:var(--brand); color:#fff; border-color:var(--brand); }
 </style>

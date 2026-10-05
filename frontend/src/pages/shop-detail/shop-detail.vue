@@ -1,4 +1,4 @@
-﻿<!-- shop-detail.vue —— 餐厅详情查看 -->
+<!-- shop-detail.vue —— 餐厅详情查看 -->
 <template>
   <view class="page">
     <view class="navbar">
@@ -8,7 +8,7 @@
     <scroll-view scroll-y class="body" v-if="s">
       <view class="inner">
       <!-- hero 大封面（对齐原型 hero-img，彩色+emoji） -->
-      <view class="hero" :class="'k' + (s.id % 4 + 1)"><text class="em">{{ s.em || '🏪' }}</text></view>
+      <view class="hero" :class="'k' + (s.id % 4 + 1)"><text class="em">{{ s.icon || '🏪' }}</text></view>
       <view class="d-title">
         <text class="name">{{ s.name }}</text>
         <text class="type">{{ s.type }}</text>

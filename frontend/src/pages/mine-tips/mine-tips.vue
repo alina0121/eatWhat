@@ -68,8 +68,11 @@ export default {
   methods: {
     back() { uni.navigateBack() },
     async load() {
-      try { this.list = await tipApi.list(this.curName, false) }
-      catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
+      try {
+        // 后端返回 cat / pub，前端内部用 category / public；此处做字段名对齐
+        const raw = await tipApi.list(this.curName, false)
+        this.list = raw.map((t) => ({ ...t, category: t.cat || '', public: t.pub ? 1 : 0 }))
+      } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
     statusText(s) { return { pending: '⏳ 待审核', approved: '✅ 已公开', rejected: '🚫 未通过' }[s] || '' },
     openForm(t) {
@@ -78,7 +81,8 @@ export default {
       this.form = t ? { title: t.title, content: t.content, category: t.category || '', public: t.public } : { title: '', content: '', category: '', public: 1 }
     },
     async saveForm() {
-      const d = { title: this.form.title, content: this.form.content, category: this.form.category, public: this.form.public }
+      // 后端期望 cat / pub，不是 category / public
+      const d = { title: this.form.title, content: this.form.content, cat: this.form.category, pub: !!this.form.public }
       if (this.editingId) await tipApi.update(this.editingId, { ...d, author: this.curName })
       else await tipApi.create({ ...d, author: this.curName })
       this.showForm = false

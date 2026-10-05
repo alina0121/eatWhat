@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.db import init_db
 from app.routers import (
-    admin, candidates, categories, configs, covers, diners, fridge, ingredients, mine, recipes, records, shops, tips, weights,
+    admin, candidates, categories, configs, diners, fridge, ingredients, mine, recipes, records, shops, taste_tags, tips, weights,
 )
 
 # 幂等初始化数据库（首次启动自动建表+种子）
@@ -37,13 +37,13 @@ app.include_router(recipes.router)
 app.include_router(fridge.router)
 app.include_router(ingredients.router)
 app.include_router(categories.router)
-app.include_router(covers.router)
 app.include_router(candidates.router)
 app.include_router(shops.router)
 app.include_router(diners.router)
 app.include_router(tips.router)
 app.include_router(records.router)
 app.include_router(weights.router)
+app.include_router(taste_tags.router)
 
 
 @app.get("/health")

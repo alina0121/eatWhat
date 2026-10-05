@@ -1,4 +1,4 @@
-﻿<!-- recipe-edit.vue —— 新建/编辑我的菜谱（对齐第一版UI设计稿 p-recipe-new）
+<!-- recipe-edit.vue —— 新建/编辑我的菜谱（对齐第一版UI设计稿 p-recipe-new）
   交互：菜名输入 / 耗时+难度 segs 分段 / 口味标签 chips 多选 / 所需食材从「我的食材」池勾选 / 步骤教程每行一步。
   缺货代入待采购在候选环节处理，这里仅记录结构化 ing。
 -->
@@ -18,27 +18,32 @@
         <input class="finput" v-model="form.name" placeholder="请输入菜名" />
       </view>
 
-      <!-- 封面：从管理员维护的固定封面图库点选（默认=走默认轮换渐变） -->
+      <!-- 封面：只选渐变底色（emoji 由下方「菜品 emoji」独立卡片负责） -->
       <view class="add-card">
-        <text class="flabel">封面 <text class="t-12">从图库点选</text></text>
-        <scroll-view scroll-x class="cover-scroll" :show-scrollbar="false">
-          <view class="cover-row">
-            <view class="cover-item" :class="{ on: coverId === '' }" @tap="pickCover('')">
-              <view class="cover-box" :style="{ background: DEFAULT_GRAD }"><text class="cover-em">🍽</text></view>
-              <text class="cover-name">默认</text>
-            </view>
-            <view
-              class="cover-item"
-              v-for="c in covers"
-              :key="c.id"
-              :class="{ on: String(coverId) === String(c.id) }"
-              @tap="pickCover(c)"
-            >
-              <view class="cover-box" :style="{ background: c.grad }"><text class="cover-em">{{ c.emoji }}</text></view>
-              <text class="cover-name">{{ c.name || ('封面 ' + c.id) }}</text>
-            </view>
+        <text class="flabel">封面 <text class="t-12">渐变底色</text></text>
+        <view class="grad-preview" :style="{ background: coverGrad || '' }">
+          <text class="gp-em">{{ formEmoji || '🍽' }}</text>
+        </view>
+        <scroll-view scroll-x class="grad-scroll" :show-scrollbar="false">
+          <view class="grad-grid">
+            <view class="grad-cell empty" :class="{ on: !coverGrad }" @tap="coverGrad = ''">空</view>
+            <view v-for="(g,i) in grads" :key="i" class="grad-cell" :class="{ on: coverGrad === g }" :style="{ background: g }" @tap="coverGrad = g"></view>
           </view>
         </scroll-view>
+      </view>
+
+      <!-- 菜品 emoji：唯一的菜品图标来源，从菜谱图标池点选 -->
+      <view class="add-card">
+        <text class="flabel">菜品 emoji</text>
+        <view class="r-em-grid">
+          <view
+            v-for="ic in recipeIcons"
+            :key="ic"
+            class="r-em-cell"
+            :class="{ on: formEmoji === ic }"
+            @tap="formEmoji = ic"
+          >{{ ic }}</view>
+        </view>
       </view>
 
       <!-- 耗时 / 难度 -->
@@ -76,7 +81,7 @@
           <text class="cat-arrow" :class="{ off: catScroll <= 0 }" @tap="catStep(-1)">‹</text>
           <scroll-view class="cat-scroll" scroll-x :scroll-left="catScroll" @scroll="onCatScroll" :show-scrollbar="false">
             <view class="cat-row">
-              <view v-for="c in cats" :key="c" class="ctab" :class="{ on: c === activeCat }" @tap="onCat(c)">{{ c }}</view>
+              <view v-for="(c, idx) in cats" :key="c.name" class="ctab" :class="{ on: idx === catIdx }" @tap="onCat(idx)">{{ c.icon }} {{ c.name }}</view>
             </view>
           </scroll-view>
           <text class="cat-arrow" :class="{ off: catScroll >= catMax }" @tap="catStep(1)">›</text>
@@ -88,15 +93,16 @@
 
         <!-- 已选 tags（× 移除） -->
         <view class="sel-tags" v-if="selNames.length">
-          <view class="chk-sel" v-for="n in selNames" :key="n">{{ n }}<text class="x" @tap.stop="toggleIng(n)"> ×</text></view>
+          <view class="chk-sel" v-for="n in selNames" :key="n">{{ iconByName(n) }} {{ n }}<text class="x" @tap.stop="toggleIng(n)"> ×</text></view>
         </view>
 
         <!-- 当前大类食材清单（点选切换，选中同步到上方已选） -->
         <view class="ing-list">
-          <view class="ing-row" v-for="n in poolFor(activeCat)" :key="n" @tap="toggleIng(n)">
-            <text class="nm">{{ n }}</text>
+          <view class="ing-row" v-for="it in poolFor(activeCat)" :key="it.name" @tap="toggleIng(it.name)">
+            <text class="ing-ic">{{ ingIcon(it) }}</text>
+            <text class="nm">{{ it.name }}</text>
             <text class="sp"></text>
-            <text class="box" :class="{ on: selNames.includes(n) }">{{ selNames.includes(n) ? '✓' : '' }}</text>
+            <text class="box" :class="{ on: selNames.includes(it.name) }">{{ selNames.includes(it.name) ? '✓' : '' }}</text>
           </view>
           <view class="empty" v-if="!poolFor(activeCat).length">
             <text>「{{ activeCat }}」还没有食材</text>
@@ -129,18 +135,18 @@
 </template>
 
 <script>
-import { recipeApi, ingredientApi, catApi, coverApi } from '@/api'
+import { recipeApi, ingredientApi, catApi, configApi, tasteApi } from '@/api'
 
 const timeOpts = ['10 分钟内', '15-30 分', '30-60 分', '60+ 分']
 const diffOpts = ['简单', '中等', '较难']
-const tagOpts = ['下饭', '快手', '素', '🌶 辣', '宴客']
 const DEFAULT_GRAD = 'linear-gradient(135deg,#4b3fe3,#8b5cf6)'
 
 export default {
   data() {
     return {
       id: null,
-      timeOpts, diffOpts, tagOpts,
+      timeOpts, diffOpts,
+      tagOpts: [],  // 运行时从 tasteApi 读
       form: { name: '', diff: '简单', time: 10 },
       tags: [],
       pool: [],           // 我的食材 [{name, cat}]
@@ -150,8 +156,10 @@ export default {
       selMap: {},         // name -> 原菜谱已有的 qty/unit（编辑回填）
       stepText: '',
       newIng: '',          // 快捷收录新食材的输入
-      covers: [],          // 封面图库（管理员维护），选择后写 recipes.cover
-      coverId: '',         // 当前选中的封面 id（''=默认轮换）
+      coverGrad: '',       // 封面渐变（独立点选，直接存 recipes.cover）
+      gradPool: '',        // 渐变预设池（| 分隔）
+      recipeIcons: [],     // 菜谱 emoji 候选池（来自 configs.recipe_emoji_pool）
+      formEmoji: '',       // 用户选中/输入的菜品 emoji，独立于封面
       DEFAULT_GRAD,
       catScroll: 0,        // 大类横滑当前偏移(px)
       catViewW: 0,         // 大类容器可视宽度(px)
@@ -160,7 +168,7 @@ export default {
   },
   computed: {
     activeCat() {          // 当前激活大类名
-      return this.cats[this.catIdx] || ''
+      return (this.cats[this.catIdx] && this.cats[this.catIdx].name) || ''
     },
     catMax() {             // 大类可横向滚动的最大偏移
       return Math.max(0, this.catContentW - this.catViewW)
@@ -171,6 +179,12 @@ export default {
     catThumbL() {          // 滑轨 thumb 左偏移(%)：随滚动进度滑动
       const m = this.catMax
       return m > 0 ? (this.catScroll / m) * (100 - this.catThumbW) : 0
+    },
+    // 渐变预设列表：从 gradPool（|分隔）解析
+    grads() {
+      if (!this.gradPool) return [this.DEFAULT_GRAD]
+      const arr = this.gradPool.split('|').map(s => s.trim()).filter(Boolean)
+      return arr.length ? arr : [this.DEFAULT_GRAD]
     }
   },
   async onLoad(q) {
@@ -178,16 +192,41 @@ export default {
     await this.loadPool()
   },
   methods: {
+    // 辅助：根据大类名查 icon（emoji）
+    catIconOf(catName) {
+      const c = this.cats.find((c) => c.name === catName)
+      return (c && c.icon) || '🥗'
+    },
+    // 食材 icon：优先自身，空 fallback 大类
+    ingIcon(it) {
+      if (it.icon) return it.icon
+      return this.catIconOf(it.cat)
+    },
+    // 根据食材名查 icon（给已选 sel-tags 用）
+    iconByName(name) {
+      const p = this.pool.find((p) => p.name === name)
+      if (!p) return '🥗'
+      return this.ingIcon(p)
+    },
     async loadPool() {
       try {
-        // 封面图库：管理员维护的可点选封面（emoji + 渐变）
-        this.covers = (await coverApi.list()) || []
-        // 大类：来自「食材库」维护的分类（含空大类，按用户编排的顺序）
+        // 菜谱 emoji 候选池 + 封面渐变池 + 口味标签：都从 configs/tasteApi 读
+        const [rp, gp, tags] = await Promise.all([
+          configApi.get('recipe_emoji_pool').catch(() => ({ value: '' })),
+          configApi.get('cover_grad_pool').catch(() => ({ value: '' })),
+          tasteApi.list().catch(() => [])
+        ])
+        // 口味标签候选（用户维护）
+        this.tagOpts = (tags || []).map((t) => t.name).filter(Boolean)
+        const pool = (rp && rp.value) || ''
+        if (pool) this.recipeIcons = pool.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+        this.gradPool = (gp && gp.value) || ''
+        // 大类：来自「食材库」维护的分类（含空大类，按用户编排的顺序），带 icon 用于 fallback
         const cats = await catApi.list()
-        this.cats = cats.map((c) => c.name).filter(Boolean)
-        // 食材：全部食材库条目
+        this.cats = cats.map((c) => ({ name: c.name, icon: c.icon || '🥗' })).filter((c) => c.name)
+        // 食材：全部食材库条目，带 icon（空则渲染时 fallback 大类 icon）
         const list = await ingredientApi.list()
-        const items = list.map((x) => ({ name: (x.name || '').trim(), cat: x.cat || '其他' })).filter((x) => x.name)
+        const items = list.map((x) => ({ name: (x.name || '').trim(), cat: x.cat || '其他', icon: x.icon || '' })).filter((x) => x.name)
         this.pool = items
         this.catIdx = 0
       } catch (e) { this.pool = []; this.cats = [] }
@@ -206,8 +245,8 @@ export default {
     this.$nextTick(() => this.measureCat())
   },
   // 切换大类 chips → 选中当前大类
-  onCat(c) {
-    this.catIdx = this.cats.indexOf(c)
+  onCat(idx) {
+    this.catIdx = idx
   },
   // 大类滑动的实时偏移（驱动滑轨 thumb 与箭头禁用态）
   onCatScroll(e) {
@@ -225,9 +264,9 @@ export default {
     q.select('.cat-scroll').fields({ size: true }, (d) => { if (d) this.catViewW = d.width || 0 })
     q.exec()
   },
-    // 某个大类下的食材名清单
+    // 某个大类下的食材对象清单（带 name + cat + icon）
     poolFor(cat) {
-      return this.pool.filter((p) => p.cat === cat).map((p) => p.name)
+      return this.pool.filter((p) => p.cat === cat)
     },
     // 点选/取消食材；仅记录名称，qty/unit 沿用原值或默认
     toggleIng(p) {
@@ -236,14 +275,14 @@ export default {
       else { this.selNames.push(p); this.selMap[p] = this.selMap[p] || { qty: 1, unit: '份' } }
       this.selNames = [...this.selNames]
     },
-    // 点选封面：''=默认轮换；c 为图库封面对象时取它的 id
-    pickCover(c) {
-      this.coverId = (c === '' || c === null || c === undefined) ? '' : c.id
-    },
     async load() {
       const r = await recipeApi.get(this.id)
       this.form = { name: r.name, diff: r.diff, time: r.time || 10 }
-      this.coverId = r.cover || ''    // 回填已选封面（''=默认轮换）
+      // cover 直接存渐变字符串（旧 "emoji|grad" 格式兼容：取 | 后半段）
+      let rawCover = r.cover || ''
+      if (rawCover.includes('|')) rawCover = rawCover.split('|', 1)[1] || ''
+      this.coverGrad = rawCover
+      this.formEmoji = r.em || ''     // 回填菜品 emoji
       this.tags = r.tags || []
       // 步骤文本：每行一步（兼容 steps 为单对象/空的旧数据）
       const rawSteps = r.steps
@@ -280,12 +319,11 @@ export default {
     },
     async save() {
       if (!this.form.name.trim()) return uni.showToast({ title: '请输入菜名', icon: 'none' })
-      // 封面：选了图库封面则 em 用它的 emoji、cover 存 id；未选则 em 默认、cover 空（走默认轮换）
-      const picked = this.covers.find((c) => String(c.id) === String(this.coverId))
+      // 封面：cover 字段直接存渐变字符串（或空=默认轮换）
       const data = {
         name: this.form.name.trim(),
-        em: picked ? picked.emoji : '🍽',
-        cover: picked ? String(picked.id) : '',
+        em: this.formEmoji || '🍽',
+        cover: this.coverGrad || '',
         time: this.form.time || 10,
         diff: this.form.diff,
         tags: this.tags,
@@ -317,14 +355,19 @@ export default {
 .name-row { display:flex; align-items:center; }
 .name-row .flabel { margin:0; flex:none; width:110rpx; }
 .name-row .finput { flex:1; }
-/* 封面图库选择：横滑点选 emoji+渐变卡（对齐食材大类横滑交互） */
-.cover-scroll { margin-top:6rpx; }
-.cover-row { display:flex; gap:16rpx; padding:6rpx 2rpx 10rpx; }
-.cover-item { flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:8rpx; }
-.cover-box { width:92rpx; height:92rpx; border-radius:20rpx; display:flex; align-items:center; justify-content:center; border:4rpx solid transparent; box-sizing:border-box; }
-.cover-item.on .cover-box { border-color:var(--brand); }
-.cover-em { font-size:48rpx; }
-.cover-name { font-size:22rpx; color:var(--text-2); }
+/* 封面：渐变预览条 + 预设网格 */
+.grad-preview { width:100%; height:140rpx; border-radius:16rpx; background:#f5f5f5; display:flex; align-items:center; justify-content:center; margin-bottom:12rpx; }
+.gp-em { font-size:72rpx; }
+/* 渐变预设：一行横向滑动 */
+.grad-scroll { white-space: nowrap; margin-top: 4rpx; }
+.grad-grid { display: inline-flex; flex-wrap: nowrap; gap: 12rpx; padding: 4rpx; }
+.grad-cell { width: 80rpx; height: 80rpx; border-radius: 14rpx; border: 4rpx solid transparent; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 22rpx; color: #999; flex-shrink: 0; }
+.grad-cell.empty { background:#f5f5f5; border:2rpx dashed #ccc; }
+.grad-cell.on { border-color:var(--brand); }
+/* 菜品 emoji 候选网格：4列 × 两行半，末行半露暗示可下滑 */
+.r-em-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:10rpx; max-height:200rpx; overflow-y:auto; align-content:start; margin-top:4rpx; }
+.r-em-cell { height:76rpx; border-radius:14rpx; border:2rpx solid var(--border); display:flex; align-items:center; justify-content:center; font-size:40rpx; background:var(--card); box-sizing:border-box; }
+.r-em-cell.on { border-color:var(--brand); background:#dcf2ee; }
 .flabel { font-size:26rpx; color:var(--text-2); margin-bottom:12rpx; display:flex; }
 .flabel.sub-lbl { margin:18rpx 0 10rpx; }
 .t-12 { font-size:22rpx; color:var(--text-2); margin-left:8rpx; }
@@ -333,7 +376,9 @@ export default {
 .segs { display:flex; gap:10rpx; }
 .seg { flex:1; text-align:center; padding:14rpx 4rpx; border:1rpx solid var(--border); border-radius:14rpx; font-size:26rpx; background:var(--card); white-space:nowrap; overflow:hidden; }
 .seg.on { background:var(--brand); color:#fff; border-color:var(--brand); }
-.seg-tags { display:flex; gap:12rpx; flex-wrap:wrap; }
+/* 口味 tag 候选网格：6列 × 最多2行，超出滚动 */
+.seg-tags { display:grid; grid-template-columns:repeat(6, 1fr); gap:10rpx; max-height:200rpx; overflow-y:auto; align-content:start; }
+.seg-tags .seg { font-size:22rpx; padding:8rpx 4rpx; height:56rpx; line-height:40rpx; }
 .chip { font-size:24rpx; color:var(--text-2); background:var(--card); border:1rpx solid var(--border); border-radius:999rpx; padding:12rpx 22rpx; white-space:nowrap; }
 .chip.on { background:var(--brand); color:#fff; border-color:var(--brand); }
 .sel-tags { display:flex; gap:10rpx; flex-wrap:wrap; margin-bottom:4rpx; }
@@ -352,6 +397,7 @@ export default {
 /* 当前大类食材清单（点选行） */
 .ing-list { border:1rpx solid var(--border); border-radius:14rpx; overflow:hidden; margin:2rpx 0; }
 .ing-row { display:flex; align-items:center; gap:12rpx; padding:18rpx 20rpx; border-bottom:1rpx solid var(--border); background:var(--card); }
+.ing-ic { font-size:34rpx; }
 .ing-row:last-child { border-bottom:none; }
 .ing-row .nm { font-size:28rpx; }
 .ing-row .box { width:40rpx; height:40rpx; border-radius:50%; border:2rpx solid var(--border); display:flex; align-items:center; justify-content:center; font-size:26rpx; color:#fff; background:var(--card); flex-shrink:0; box-sizing:border-box; }

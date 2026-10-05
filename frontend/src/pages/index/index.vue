@@ -1,4 +1,4 @@
-﻿<!-- index.vue —— 推荐页（对齐「第一版 UI」今日页）
+<!-- index.vue —— 推荐页（对齐「第一版 UI」今日页）
   结构：问候 + 转盘「帮我选一个」(菜谱+餐厅混合池，抽中类型徽章/标题/副描述，
         结果操作：＋候选 与 🔄再抽一次 并排) + 「跟谁一起吃」干饭成员行(选人自动带口味)
         + 「快捷筛一下」口味 chips + 「为您推荐」[换一个]（1 餐厅 + 3 菜谱，按口味过滤）
@@ -37,30 +37,34 @@
       <!-- ========== 跟谁一起吃（干饭成员，选上自动带口味） ========== -->
       <view class="section">
         <view class="sec-tit">跟谁一起吃？ <text class="sub-13">选上就带上他/她的口味</text></view>
-        <view class="chiprow">
-          <view class="chip" :class="{ on: inDiners.length === 0 }" @tap="clearDiners">🌤 不限 / 清空</view>
-          <view
-            class="chip"
-            v-for="d in diners"
-            :key="d.id"
-            :class="{ on: inDiners.includes(d.id) }"
-            @tap="toggleDiner(d)"
-          >🧑 {{ d.name }}</view>
-        </view>
+        <scroll-view scroll-x class="chip-scroll">
+          <view class="chip-row1">
+            <view class="chip" :class="{ on: inDiners.length === 0 }" @tap="clearDiners">🌤 不限 / 清空</view>
+            <view
+              class="chip"
+              v-for="d in diners"
+              :key="d.id"
+              :class="{ on: inDiners.includes(d.id) }"
+              @tap="toggleDiner(d)"
+            >🧑 {{ d.name }}</view>
+          </view>
+        </scroll-view>
       </view>
 
       <!-- ========== 快捷筛一下（口味 chips） ========== -->
       <view class="section">
         <view class="sec-tit">快捷筛一下</view>
-        <view class="chiprow">
-          <view
-            class="chip"
-            v-for="t in quickTags"
-            :key="t"
-            :class="{ on: selTags.includes(t) }"
-            @tap="toggleTag(t)"
-          >{{ t }}</view>
-        </view>
+        <scroll-view scroll-x class="chip-scroll">
+          <view class="chiprow">
+            <view
+              class="chip"
+              v-for="t in quickTags"
+              :key="t"
+              :class="{ on: selTags.includes(t) }"
+              @tap="toggleTag(t)"
+            >{{ t }}</view>
+          </view>
+        </scroll-view>
       </view>
 
       <!-- ========== 为您推荐 ========== -->
@@ -101,7 +105,7 @@
 </template>
 
 <script>
-import { recipeApi, shopApi, dinerApi, candidateApi } from '@/api'
+import { recipeApi, shopApi, dinerApi, candidateApi, tasteApi } from '@/api'
 
 export default {
   data() {
@@ -112,7 +116,7 @@ export default {
       cands: [],           // 已在「吃这些」的候选（用于 ✓已选 状态）
       result: null,        // 转盘抽中的项 { kind, ref_id, name, em, sub }
       spinning: false,     // 转盘动画标记
-      quickTags: ['麻辣', '家常', '清淡', '快手', '下饭', '宴客'],
+      quickTags: [],        // 从 tasteApi 动态读；空时显示默认
       selTags: [],         // 当前生效的口味标记（手动点选 + 成员带入，取并集）
       inDiners: [],        // 已选干饭成员 id
       recShop: null,
@@ -132,13 +136,16 @@ export default {
   methods: {
     async load() {
       try {
-        const [recipes, shops, diners, cands] = await Promise.all([
-          recipeApi.list(), shopApi.list(), dinerApi.list(), candidateApi.list()
+        const [recipes, shops, diners, cands, tags] = await Promise.all([
+          recipeApi.list(), shopApi.list(), dinerApi.list(), candidateApi.list(), tasteApi.list().catch(() => [])
         ])
         this.recipes = recipes
         this.shops = shops
         this.diners = diners
         this.cands = cands
+        // 口味标签：用户自己维护的，空则用默认
+        const names = (tags || []).map((t) => t.name).filter(Boolean)
+        this.quickTags = names.length ? names : ['麻辣', '家常', '清淡', '快手', '下饭', '宴客']
         this.recommend()
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
@@ -255,7 +262,11 @@ export default {
 .sec-tit { font-size:32rpx; font-weight:700; margin:20rpx 0 16rpx; }
 .link { color:var(--brand); font-size:26rpx; margin-left:8rpx; font-weight:400; }
 .sub-13 { font-size:22rpx; color:var(--text-2); font-weight:400; }
-.chiprow { display:flex; flex-wrap:wrap; gap:12rpx; }
+.chip-scroll { white-space: nowrap; }
+.chip-row1 { display: flex; gap: 12rpx; padding-right: 8rpx; }
+.chip-row1 .chip { white-space: nowrap; flex-shrink: 0; }
+.chiprow { display: grid; grid-template-rows: repeat(2, 56rpx); grid-auto-flow: column; grid-auto-columns: max-content; gap: 12rpx 10rpx; padding-right: 8rpx; }
+.chiprow .chip { white-space: nowrap; flex-shrink: 0; }
 
 /* —— 为您推荐 —— */
 .rec-shop { display:flex; align-items:center; gap:14rpx; background:var(--card); border:1rpx solid var(--border); border-radius:var(--radius-lg,16rpx); padding:20rpx; margin-bottom:16rpx; }

@@ -1,4 +1,4 @@
-﻿<!-- mine-weight.vue —— 体重：最新概览(环比) + 近30天曲线(体重/体脂, 带数据点) + 记一笔/编辑/删除 -->
+<!-- mine-weight.vue —— 体重：最新概览(环比) + 近30天曲线(体重/体脂, 带数据点) + 记一笔/编辑/删除 -->
 <template>
   <view class="npage">
     <view class="nheader">
@@ -13,7 +13,12 @@
         <view class="form">
           <input v-model="f.weight" type="digit" placeholder="体重(kg)" class="fi" />
           <input v-model="f.fat" type="digit" placeholder="体脂(% 可省)" class="fi" />
-          <input v-model="f.date" placeholder="日期 YYYY-MM-DD(可省)" class="fi" />
+          <picker mode="date" :value="f.date" @change="f.date = $event.detail.value">
+            <view class="fi date-fi" :class="{ on: f.date }">
+              <text class="date-txt">{{ f.date || '选择日期' }}</text>
+              <text class="date-ar">›</text>
+            </view>
+          </picker>
           <view class="form-btns">
             <button class="pbtn ghost" @tap="showForm = false">取消</button>
             <button class="pbtn" @tap="save">{{ editingId ? '保存修改' : '保存' }}</button>
@@ -150,8 +155,11 @@ export default {
     back() { uni.navigateBack() },
     async load() {
       try {
+        // 后端返回 body_fat，前端内部用 fat；此处做字段名对齐
         this.weights = (await weightApi.list()).map((r) => ({
-          ...r, weight: Number(r.weight), fat: r.fat != null ? Number(r.fat) : null
+          ...r,
+          weight: Number(r.weight),
+          fat: r.body_fat != null ? Number(r.body_fat) : null
         }))
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
@@ -165,8 +173,12 @@ export default {
     },
     async save() {
       if (!this.f.weight || isNaN(Number(this.f.weight))) return uni.showToast({ title: '体重必须为数字', icon: 'none' })
-      const data = { date: this.f.date || new Date().toISOString().slice(0, 10), weight: Number(this.f.weight) }
-      if (this.f.fat && !isNaN(Number(this.f.fat))) data.fat = Number(this.f.fat)
+      // 后端字段名是 body_fat，不是 fat
+      const data = {
+        date: this.f.date || new Date().toISOString().slice(0, 10),
+        weight: Number(this.f.weight),
+        body_fat: (this.f.fat !== '' && this.f.fat != null && !isNaN(Number(this.f.fat))) ? Number(this.f.fat) : null
+      }
       if (this.editingId) await weightApi.update(this.editingId, data)
       else await weightApi.create(data)
       this.showForm = false
@@ -192,6 +204,11 @@ export default {
 /* 内联表单 */
 .form { margin-bottom:16rpx; padding:20rpx; background:var(--card); border:1rpx solid var(--border); border-radius:var(--radius-lg,16rpx); }
 .fi { background:var(--bg); border-radius:10rpx; height:76rpx; line-height:76rpx; padding:0 16rpx; margin-bottom:12rpx; font-size:26rpx; width:100%; box-sizing:border-box; color:var(--text); }
+.date-fi { display:flex; align-items:center; justify-content:space-between; border:1rpx solid var(--border); line-height:1; }
+.date-fi.on { border-color:var(--brand); }
+.date-txt { font-size:26rpx; color:var(--text); }
+.date-fi.on .date-txt { color:var(--brand); }
+.date-ar { font-size:28rpx; color:#aaa; font-weight:300; line-height:1; }
 .form-btns { display:flex; gap:16rpx; justify-content:flex-end; }
 
 /* 最新概览 */

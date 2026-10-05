@@ -55,7 +55,6 @@ def admin_stats(conn: Connection = Depends(get_db)):
             "recipes_ref": cnt("SELECT COUNT(*) FROM recipes WHERE source='admin'"),
             "ingredients": cnt("SELECT COUNT(*) FROM ingredients"),
             "categories": cnt("SELECT COUNT(*) FROM categories"),
-            "covers": cnt("SELECT COUNT(*) FROM covers"),
             "tips_total": cnt("SELECT COUNT(*) FROM tips"),
             "tips_pending": cnt("SELECT COUNT(*) FROM tips WHERE status='pending'"),
         }

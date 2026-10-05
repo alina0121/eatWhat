@@ -61,8 +61,11 @@
       <!-- 功能菜单 -->
       <view class="section">
         <view class="menu">
-          <view class="mrow" @tap="nav('/pages/mine-data/mine-data')">
-            <text class="ic">📊</text><view class="m1"><text class="mt">我的数据</text><text class="ms">计数 · 本月干饭 · 体重趋势</text></view><text class="ar">›</text>
+          <view class="mrow" @tap="nav('/pages/mine-tastes/mine-tastes')">
+            <text class="ic">🏷️</text><view class="m1"><text class="mt">口味标签</text><text class="ms">菜谱筛选 · 成员偏好 · 推荐</text></view><text class="ar">›</text>
+          </view>
+          <view class="mrow" @tap="nav('/pages/mine-ingredients/mine-ingredients')">
+            <text class="ic">🧺</text><view class="m1"><text class="mt">食材库</text><text class="ms">菜谱可选食材 · 独立维护</text></view><text class="ar">›</text>
           </view>
           <view class="mrow" @tap="nav('/pages/mine-ref/mine-ref')">
             <text class="ic">📚</text><view class="m1"><text class="mt">参考菜谱</text><text class="ms">管理员精选 · 可加入吃这些或我的菜谱</text></view><text class="ar">›</text>
@@ -76,8 +79,8 @@
           <view class="mrow" @tap="nav('/pages/mine-weight/mine-weight')">
             <text class="ic">⚖️</text><view class="m1"><text class="mt">体重记录</text><text class="ms">曲线图 · 历史数据维护</text></view><text class="ar">›</text>
           </view>
-          <view class="mrow" @tap="nav('/pages/mine-ingredients/mine-ingredients')">
-            <text class="ic">🧺</text><view class="m1"><text class="mt">食材库</text><text class="ms">菜谱可选食材 · 独立维护</text></view><text class="ar">›</text>
+          <view class="mrow" @tap="nav('/pages/mine-data/mine-data')">
+            <text class="ic">📊</text><view class="m1"><text class="mt">我的数据</text><text class="ms">计数 · 本月干饭 · 体重趋势</text></view><text class="ar">›</text>
           </view>
           <view class="mrow" v-if="isPc" @tap="nav('/pages/admin/admin')">
             <text class="ic">🖥️</text><view class="m1"><text class="mt">管理端（PC）</text><text class="ms">审核 · 图库 · 食材 · 餐厅 · 配置</text></view><text class="ar">›</text>
@@ -95,7 +98,17 @@
     <view class="mask" v-if="form.show" @tap="form.show = false">
       <view class="dialog" @tap.stop>
         <text class="d-title">{{ form.title }}</text>
-        <input v-model="form.val" :placeholder="form.hint" class="dfi" :focus="form.show" />
+        <!-- tags 模式：chip 点选 -->
+        <template v-if="form.mode === 'tags'">
+          <view class="tag-grid">
+            <view v-for="t in allTags" :key="t" class="t-chip" :class="{ on: tagSel.includes(t) }" @tap="toggleTag(t)">{{ t }}</view>
+          </view>
+          <text class="d-sub">已选 {{ tagSel.length }} 项</text>
+        </template>
+        <!-- 其他模式：input -->
+        <template v-else>
+          <input v-model="form.val" :placeholder="form.hint" class="dfi" :focus="form.show" />
+        </template>
         <view class="d-btns">
           <button class="pbtn ghost" @tap="form.show = false">取消</button>
           <button class="pbtn" @tap="saveForm">{{ form.mode === 'tags' ? '保存口味' : '确定' }}</button>
@@ -106,11 +119,13 @@
 </template>
 
 <script>
-import { dinerApi, recordApi, recipeApi, shopApi } from '@/api'
+import { dinerApi, recordApi, recipeApi, shopApi, tasteApi } from '@/api'
 
 export default {
   data() {
-    return { diners: [], curName: '', isAdmin: false, weekCount: 0, myRecipes: 0, shopCount: 0, isPc: false, form: { show: false, mode: '', title: '', val: '', hint: '', id: null } }
+    return { diners: [], curName: '', isAdmin: false, weekCount: 0, myRecipes: 0, shopCount: 0, isPc: false,
+             allTags: [], tagSel: [],   // 口味标签池（来自 tasteApi）+ 当前选中
+             form: { show: false, mode: '', title: '', val: '', hint: '', id: null } }
   },
   onShow() {
     this.curName = uni.getStorageSync('eat_user') || '我'
@@ -123,10 +138,12 @@ export default {
   methods: {
     async load() {
       try {
-        const [diners, records, recipes, shops] = await Promise.all([
-          dinerApi.list(), recordApi.list(), recipeApi.list(), shopApi.list()
+        const [diners, records, recipes, shops, tags] = await Promise.all([
+          dinerApi.list(), recordApi.list(), recipeApi.list(), shopApi.list(), tasteApi.list().catch(() => [])
         ])
         this.diners = diners
+        // 口味标签池（用于干饭成员口味维护 chip 选点）
+        this.allTags = (tags || []).map((t) => t.name).filter(Boolean)
         // 统计条（取自真实数据，实时算）
         this.weekCount = this.countThisWeek(records)
         this.myRecipes = recipes.filter((r) => r.source === 'my').length
@@ -152,7 +169,14 @@ export default {
       this.form = { show: true, mode: 'diner', title: '添加成员', val: '', hint: '姓名', id: null }
     },
     editDiner(d) {
-      this.form = { show: true, mode: 'tags', title: '编辑口味', val: (d.tags || []).join('，'), hint: '口味，逗号分隔', id: d.id }
+      this.tagSel = [...(d.tags || [])]   // 回填当前成员已选口味
+      this.form = { show: true, mode: 'tags', title: '编辑口味', val: '', hint: '', id: d.id }
+    },
+    toggleTag(t) {
+      const i = this.tagSel.indexOf(t)
+      if (i >= 0) this.tagSel.splice(i, 1)
+      else this.tagSel.push(t)
+      this.tagSel = [...this.tagSel]
     },
     async saveForm() {
       const v = (this.form.val || '').trim()
@@ -164,9 +188,8 @@ export default {
         if (!v) return uni.showToast({ title: '姓名不能为空', icon: 'none' })
         await dinerApi.create({ name: v, tags: [] })
       } else if (this.form.mode === 'tags') {
-        // 逗号/顿号/空格分隔多个口味
-        const tags = v.split(/[，,、\s]+/).filter(Boolean)
-        await dinerApi.updateTags(this.form.id, tags)
+        // 口味 chip 点选结果（全来自 tasteApi 维护的标签）
+        await dinerApi.updateTags(this.form.id, [...this.tagSel])
       }
       this.form.show = false
       this.load()
@@ -198,6 +221,11 @@ export default {
 .d-title { font-size:32rpx; font-weight:700; display:block; margin-bottom:20rpx; }
 .dfi { background:var(--bg); border-radius:12rpx; height:84rpx; line-height:84rpx; padding:0 16rpx; margin-bottom:24rpx; font-size:28rpx; width:100%; box-sizing:border-box; color:var(--text); }
 .d-btns { display:flex; gap:16rpx; justify-content:flex-end; }
+/* 弹窗内口味 chip 网格：6列 × 最多2行，超出滚动 */
+.tag-grid { display:grid; grid-template-columns:repeat(6, 1fr); gap:10rpx; max-height:200rpx; overflow-y:auto; align-content:start; margin-bottom:12rpx; }
+.t-chip { text-align:center; font-size:24rpx; padding:10rpx 4rpx; border:1rpx solid var(--border); border-radius:10rpx; background:var(--bg); }
+.t-chip.on { background:var(--brand); color:#fff; border-color:var(--brand); }
+.d-sub { font-size:22rpx; color:var(--text-2); display:block; margin-bottom:12rpx; }
 
 /* 资料头 */
 .pro { display:flex; align-items:center; gap:20rpx; background:var(--card); border:1rpx solid var(--border); border-radius:var(--radius-lg,16rpx); padding:26rpx 24rpx; }

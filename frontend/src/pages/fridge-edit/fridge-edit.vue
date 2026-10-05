@@ -14,25 +14,29 @@
       <view class="scroll-inner">
       <view class="add-card">
         <text class="flabel">食材大类（点选）</text>
-        <!-- 单行横滑点选 + 左右步进箭头 + 底部滑轨（对齐菜谱页「大类滑动筛选」交互） -->
-        <view class="cat-wrap">
-          <text class="cat-arrow" :class="{ off: catScroll <= 0 }" @tap="catStep(-1)">‹</text>
-          <scroll-view class="cat-scroll" scroll-x :scroll-left="catScroll" @scroll="onCatScroll" :show-scrollbar="false">
-            <view class="cat-row">
-              <view v-for="c in catOpts" :key="c" class="chip" :class="{ on: form.cat === c }" @tap="form.cat = c">{{ c }}</view>
-            </view>
-          </scroll-view>
-          <text class="cat-arrow" :class="{ off: catScroll >= catMax }" @tap="catStep(1)">›</text>
-        </view>
-        <view class="cat-track">
-          <view class="cat-thumb" :style="{ width: catThumbW + '%', left: catThumbL + '%' }"></view>
-        </view>
+        <scroll-view scroll-x class="f-cat-scroll">
+          <view class="f-cat-grid">
+            <view
+              v-for="c in cats"
+              :key="c.name"
+              class="chip"
+              :class="{ on: form.cat === c.name }"
+              @tap="form.cat = c.name"
+            >{{ c.icon || '🥗' }} {{ c.name }}</view>
+          </view>
+        </scroll-view>
       </view>
 
       <view class="add-card">
         <text class="flabel">从食材库点选（{{ activeCat }}）</text>
         <view class="seg-tags" v-if="activeCatIngs.length">
-          <view v-for="nm in activeCatIngs" :key="nm" class="chip" :class="{ on: form.name === nm }" @tap="form.name = nm">{{ nm }}</view>
+          <view
+            v-for="ing in activeCatIngs"
+            :key="ing.name"
+            class="chip"
+            :class="{ on: form.name === ing.name }"
+            @tap="form.name = ing.name; form.cat = activeCat"
+          >{{ ing.icon }} {{ ing.name }}</view>
         </view>
         <text class="t-12" v-if="!activeCatIngs.length">{{ activeCat }} 暂无食材，可在下方收录进食材库</text>
       </view>
@@ -126,21 +130,16 @@ export default {
     return {
       type: 'stock', id: null, stores, shelfOpts,
       cats: [],            // 食材大类 [{id,name,icon,sort}]，动态加载
-      pool: [],            // 食材库 [{name, cat}]，供点选
-      catScroll: 0,        // 大类横滑当前偏移(px)
-      catViewW: 0,         // 大类容器可视宽度(px)
-      catContentW: 0,      // 大类内容总宽(px)，用于算滑轨进度
+      pool: [],            // 食材库 [{name, cat, icon}]，供点选
       quickName: '',       // 快捷收录进食材库的输入
       qtyText: '',
-      form: { name: '', cat: '其他', qty: 1, unit: '份', store: '冷藏', buy: '', days: 7 }    }
+      form: { name: '', cat: '其他', qty: 1, unit: '份', store: '冷藏', buy: '', days: 7 }
+    }
   },
   computed: {
     title() {
       if (this.type === 'purchase') return this.id ? '编辑待购' : '新增待购'
       return this.id ? '编辑在库' : '新增食材'
-    },
-    catOpts() {           // 大类名列表（模板点选用）
-      return this.cats.map((c) => c.name)
     },
     emPreview() {          // 大类图标预览（取自食材库维护的图标）
       const c = this.cats.find((x) => x.name === this.form.cat)
@@ -148,20 +147,11 @@ export default {
     },
     activeCat() {          // 当前归类的大类（表单选中值，异常则兜底首个大类）
       const c = this.form.cat
-      return this.catOpts.includes(c) ? c : (this.catOpts[0] || '其他')
+      const names = this.cats.map((x) => x.name)
+      return names.includes(c) ? c : (names[0] || '其他')
     },
-    activeCatIngs() {      // 当前大类下食材库可点选项（与菜谱页交互一致）
-      return this.pool.filter((p) => p.cat === this.activeCat).map((p) => p.name)
-    },
-    catMax() {             // 大类可横向滚动的最大偏移
-      return Math.max(0, this.catContentW - this.catViewW)
-    },
-    catThumbW() {          // 滑轨 thumb 宽度(%)：可视/内容比例，至少 8%
-      return this.catContentW > 0 ? Math.max(8, (this.catViewW / this.catContentW) * 100) : 100
-    },
-    catThumbL() {          // 滑轨 thumb 左偏移(%)：随滚动进度滑动
-      const m = this.catMax
-      return m > 0 ? (this.catScroll / m) * (100 - this.catThumbW) : 0
+    activeCatIngs() {      // 当前大类下食材库可点选项（含 icon）
+      return this.pool.filter((p) => p.cat === this.activeCat)
     },
     // 购买日期的友好显示：今天/昨天/N天前；无日期时占位
     buyLabel() {
@@ -181,15 +171,12 @@ export default {
       } catch (e) { return v }
     }
   },
-  onReady() {              // 渲染完成后量取大类尺寸，供滑轨进度计算
-    this.$nextTick(() => this.measureCat())
-  },
   async onLoad(q) {
     this.type = q.type || 'stock'
     try {
       const [cats, ingr] = await Promise.all([catApi.list(), ingredientApi.list()])
       this.cats = cats
-      this.pool = ingr.map((x) => ({ name: x.name, cat: x.cat || '其他' }))
+      this.pool = ingr.map((x) => ({ name: x.name, cat: x.cat || '其他', icon: (x.icon || '').trim() || this.catIconOf(x.cat) }))
     } catch (e) { this.cats = []; this.pool = [] }
     if (q.id) {
       this.id = Number(q.id)
@@ -198,7 +185,6 @@ export default {
       // 新增在库：默认购买日期=今天，避免空值
       this.form.buy = this._today()
     }
-    this.$nextTick(() => this.measureCat())
   },
   methods: {
     // 今天 YYYY-MM-DD（本地时区），给新增在库作默认购买日期
@@ -206,6 +192,11 @@ export default {
       const d = new Date()
       const p = (n) => String(n).padStart(2, '0')
       return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+    },
+    // 根据大类名查 icon（食材自身无 icon 时用大类 icon 兜底）
+    catIconOf(catName) {
+      const c = this.cats.find((x) => x.name === catName)
+      return (c && c.icon) || '🥗'
     },
     async load() {
       if (this.type === 'purchase') {
@@ -225,22 +216,6 @@ export default {
         this.qtyText = item.qty + item.unit
       }
     },
-    // 大类滑动实时偏移（驱动滑轨 thumb 与箭头禁用态）
-    onCatScroll(e) {
-      this.catScroll = e.detail.scrollLeft || 0
-    },
-    // 左右箭头步进（不到边界才可用；滚到受控偏移后由 onCatScroll 纠正为真实值）
-    catStep(dir) {
-      const step = (this.catViewW * 0.8) || 200
-      this.catScroll = Math.min(this.catMax, Math.max(0, this.catScroll + dir * step))
-    },
-    // 量取大类可视/内容宽度：可视=scroll-view，内容=内部 .cat-row
-    measureCat() {
-      const q = uni.createSelectorQuery().in(this)
-      q.select('.cat-row').fields({ size: true }, (d) => { if (d) this.catContentW = d.width || 0 })
-      q.select('.cat-scroll').fields({ size: true }, (d) => { if (d) this.catViewW = d.width || 0 })
-      q.exec()
-    },
     // 收录新食材进食材库：创建后重载食材池供点选（与菜谱页「＋ 收录」一致）
     async collectIng() {
       const name = (this.quickName || '').trim()
@@ -249,7 +224,7 @@ export default {
         await ingredientApi.create({ name, cat: this.activeCat || '其他' })
         this.quickName = ''
         const ingr = await ingredientApi.list()
-        this.pool = ingr.map((x) => ({ name: x.name, cat: x.cat || '其他' }))
+        this.pool = ingr.map((x) => ({ name: x.name, cat: x.cat || '其他', icon: (x.icon || '').trim() || this.catIconOf(x.cat) }))
         uni.showToast({ title: '已收录', icon: 'success' })
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
@@ -316,14 +291,11 @@ export default {
 .seg-tags { display:flex; gap:12rpx; flex-wrap:wrap; }
 .chip { font-size:24rpx; flex-shrink:0; white-space:nowrap; }
 .chip.on { background:var(--brand); border-color:var(--brand); color:#fff; }
-/* 大类滑动筛选：箭头 + 单行横滑 + 底部滑轨（与菜谱页一致） */
-.cat-wrap { display:flex; align-items:center; gap:8rpx; margin:4rpx 0; }
-.cat-arrow { flex-shrink:0; width:44rpx; height:44rpx; border-radius:50%; background:var(--bg); color:var(--text-2); display:flex; align-items:center; justify-content:center; font-size:34rpx; line-height:1; }
-.cat-arrow.off { opacity:.32; }
-.cat-scroll { flex:1; min-width:0; }
-.cat-row { display:flex; gap:12rpx; padding:4rpx; box-sizing:border-box; }
-.cat-track { position:relative; height:6rpx; background:#E5E3EE; border-radius:3rpx; margin:4rpx 0 6rpx; overflow:hidden; }
-.cat-thumb { position:absolute; top:0; bottom:0; background:#bfbce8; border-radius:3rpx; transition:left .15s ease, width .15s ease; }
+/* 大类两行横滑（与 mine-ingredients / 首页推荐统一） */
+.f-cat-scroll { white-space: nowrap; }
+.f-cat-grid { display: grid; grid-template-rows: repeat(2, max-content); grid-auto-flow: column; grid-auto-columns: max-content; gap: 12rpx 10rpx; padding: 4rpx 8rpx 0; }
+.f-cat-grid .chip { padding: 10rpx 20rpx; border: 1rpx solid var(--border); border-radius: 999rpx; background: var(--bg); color: var(--text-2); }
+.f-cat-grid .chip.on { background: var(--brand); color: #fff; border-color: var(--brand); }
 .segs { display:flex; gap:10rpx; }
 .seg { flex:1; text-align:center; padding:14rpx 0; border:1rpx solid var(--border); border-radius:14rpx; font-size:26rpx; background:var(--card); }
 .seg.on { background:var(--brand); color:#fff; border-color:var(--brand); }

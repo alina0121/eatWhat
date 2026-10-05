@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS recipes(
     source  TEXT NOT NULL DEFAULT 'my',    -- my | admin
     name    TEXT NOT NULL,
     em      TEXT NOT NULL DEFAULT '🍽',
-    cover   TEXT NOT NULL DEFAULT '',     -- 选用的封面 id（来自 covers 表，空=默认轮换）
+    cover   TEXT NOT NULL DEFAULT '',     -- 封面渐变（纯 CSS linear-gradient 字符串，或空=默认轮换），emoji 由 recipes.em 字段独立负责
     time    INTEGER NOT NULL DEFAULT 0,    -- 用时（分钟）
     diff    TEXT NOT NULL DEFAULT '简单',   -- 难度
     tags    TEXT NOT NULL DEFAULT '[]',    -- JSON 数组：口味/标签
@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS ingredients(
     user_id INTEGER NOT NULL DEFAULT 1,      -- 所属用户（scope=public 时为 1）
     scope   TEXT NOT NULL DEFAULT 'user',    -- public | user
     name    TEXT NOT NULL,
-    cat     TEXT NOT NULL DEFAULT '其他'     -- 食材大类名
+    cat     TEXT NOT NULL DEFAULT '其他',    -- 食材大类名
+    icon    TEXT NOT NULL DEFAULT ''          -- 独立 emoji 图标（空=列表渲染回退用大类 icon）
 );
 
 -- 食材大类：同 ingredients 双层模型——公共大类 + 用户私有补录
@@ -65,16 +66,6 @@ CREATE TABLE IF NOT EXISTS categories(
     name    TEXT NOT NULL,
     icon    TEXT NOT NULL DEFAULT '🥗',
     sort    INTEGER NOT NULL DEFAULT 0
-);
-
--- 封面图库：管理员维护的固定封面（emoji + 渐变主题），菜谱编辑时从中点选。
--- 菜谱.cover 存封面 id；渲染时取其 emoji 作菜示图、grad 作背景，空则回退默认轮换。
-CREATE TABLE IF NOT EXISTS covers(
-    id    INTEGER PRIMARY KEY AUTOINCREMENT,
-    emoji TEXT NOT NULL DEFAULT '🍽',
-    name  TEXT NOT NULL DEFAULT '',        -- 封面色调名（可选，便于维护识别）
-    grad  TEXT NOT NULL DEFAULT 'linear-gradient(135deg,#4b3fe3,#8b5cf6)',  -- CSS 渐变背景
-    sort  INTEGER NOT NULL DEFAULT 0       -- 展示顺序
 );
 
 -- 冰箱-在库：单条食材，状态（充足/临期）实时现算；按 user_id 隔离
@@ -132,7 +123,8 @@ CREATE TABLE IF NOT EXISTS shops(
     note      TEXT NOT NULL DEFAULT '',
     arr_min   INTEGER NOT NULL DEFAULT 0,  -- 到达耗时（分钟）
     transport TEXT NOT NULL DEFAULT '步行', -- 交通工具
-    tags      TEXT NOT NULL DEFAULT '[]'   -- JSON：口味标签
+    tags      TEXT NOT NULL DEFAULT '[]',   -- JSON：口味标签
+    icon      TEXT NOT NULL DEFAULT '🏪'   -- emoji 图标
 );
 
 -- 干饭成员（用餐人）：每人维护口味偏好
@@ -140,6 +132,15 @@ CREATE TABLE IF NOT EXISTS diners(
     id   INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '[]'        -- JSON：口味/忌口/辣度
+);
+
+-- 口味标签池：每个用户独立维护自己的标签，菜谱/成员/推荐筛选都从这里取
+CREATE TABLE IF NOT EXISTS taste_tags(
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name    TEXT NOT NULL,
+    sort    INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(user_id, name)
 );
 
 -- 厨房技巧（内容社区 + 审核闭环）
@@ -190,11 +191,27 @@ def init_db() -> None:
         _cols = {r[1] for r in conn.execute("PRAGMA table_info(recipes)").fetchall()}
         if "cover" not in _cols:
             conn.execute("ALTER TABLE recipes ADD COLUMN cover TEXT NOT NULL DEFAULT ''")
+        # 迁移：老库 ingredients 表缺 icon 列
+        _icols = {r[1] for r in conn.execute("PRAGMA table_info(ingredients)").fetchall()}
+        if "icon" not in _icols:
+            conn.execute("ALTER TABLE ingredients ADD COLUMN icon TEXT NOT NULL DEFAULT ''")
+        # shops 表缺 icon 列 → 补上
+        _scols = {r[1] for r in conn.execute("PRAGMA table_info(shops)").fetchall()}
+        if "icon" not in _scols:
+            conn.execute("ALTER TABLE shops ADD COLUMN icon TEXT NOT NULL DEFAULT '🏪'")
         # 默认配置：审核开关（1 开 0 关）、临期阈值天数
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('audit_enabled','1')")
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('expiry_threshold_days','3')")
         # 管理端登录口令：仅门控管理台，不影响移动端（MVP 语义，上线可改库）
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('admin_passcode','123456')")
+        # 食材图标池：食材独立 emoji 候选（逗号分隔），管理端维护，食材新增/编辑时从这里选
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('ingredient_icon_pool','🥬,🥕,🥦,🥒,🌽,🍅,🥑,🍎,🍌,🍇,🍊,🍓,🍑,🥭,🥩,🥚,🥓,🍗,🦐,🦞,🦀,🐟,🍄,🧀,🥛,🍚,🍞,🥜,🌰,🫘,🧂,🌶,🫚,🧄,🍠,🥔,🍆,🥥,🍋,🫐')")
+        # 大类图标池：emoji 候选（逗号分隔），管理端维护，前端从配置读
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('cat_icon_pool','🥬,🍎,🥩,🦐,🍄,🥚,🍚,🧂,🥗,🌰,🫘,🧀,🍞,🍜,🥛,🌶,🥜,🍇')")
+        # 菜谱图标池：菜谱列表/详情的 emoji 候选（逗号分隔），管理端维护
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('recipe_emoji_pool','🍽,🍲,🍜,🍕,🍔,🍟,🥗,🥘,🍛,🍣,🍱,🥙,🌮,🍤,🍢,🥟,🍙,🍝,🥗,🍳')")
+        # 餐厅图标池：餐厅收藏 emoji 候选（逗号分隔），管理端维护
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('shop_icon_pool','🏪,🍜,🍲,🍣,🏮,🥟,🍢,🌮,🍕,🥘,🍱,🍛,🍗,🥙,🏠,🏢,🏖️,🏔️')")
         # 默认管理员
         conn.execute("INSERT OR IGNORE INTO users(id,name,role) VALUES(1,'管理员','admin')")
         # 食材大类默认种子：仅当表为空时写入（避免把用户删除/改名的大类复活）
@@ -208,28 +225,21 @@ def init_db() -> None:
                     "INSERT OR IGNORE INTO categories(name,icon,sort) VALUES(?,?,?)",
                     (cname, icon, i),
                 )
-        # 封面库默认种子：仅空表时写入（管理员可增删改，不清空用户改动）
-        if conn.execute("SELECT 1 FROM covers LIMIT 1").fetchone() is None:
-            _DEFAULT_COVERS = [
-                # (emoji, 色调名, 渐变) —— 与前端封面选择器一致，供管理员维护默认底稿
-                ("🍽", "紫罗兰", "linear-gradient(135deg,#4b3fe3,#8b5cf6)"),
-                ("🥩", "橙红", "linear-gradient(135deg,#ec4899,#f97316)"),
-                ("🦐", "海蓝", "linear-gradient(135deg,#06b6d4,#3b82f6)"),
-                ("🥬", "青绿", "linear-gradient(135deg,#10b981,#a3e635)"),
-                ("🍳", "粉紫", "linear-gradient(135deg,#8b5cf6,#d946ef)"),
-                ("🌶", "火橙", "linear-gradient(135deg,#f59e0b,#ef4444)"),
-                ("🍚", "暖米", "linear-gradient(135deg,#f9a825,#ef6c00)"),
-                ("🥗", "薄荷", "linear-gradient(135deg,#34d399,#22c55e)"),
-                ("🍎", "玫红", "linear-gradient(135deg,#f43f5e,#ef4444)"),
-                ("🍜", "棕面", "linear-gradient(135deg,#a16207,#ca8a04)"),
-                ("🍕", "意式", "linear-gradient(135deg,#e11d48,#f97316)"),
-                ("🧊", "冷蓝", "linear-gradient(135deg,#38bdf8,#6366f1)"),
-            ]
-            for i, (emo, nm, grad) in enumerate(_DEFAULT_COVERS):
-                conn.execute(
-                    "INSERT OR IGNORE INTO covers(emoji,name,grad,sort) VALUES(?,?,?,?)",
-                    (emo, nm, grad, i),
-                )
+        # 封面渐变预设池：| 分隔，每个是一个 CSS linear-gradient，管理端维护，菜谱编辑时直接选
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('cover_grad_pool'," + repr(
+            "linear-gradient(135deg,#4b3fe3,#8b5cf6)|"
+            "linear-gradient(135deg,#ec4899,#f97316)|"
+            "linear-gradient(135deg,#06b6d4,#3b82f6)|"
+            "linear-gradient(135deg,#10b981,#a3e635)|"
+            "linear-gradient(135deg,#8b5cf6,#d946ef)|"
+            "linear-gradient(135deg,#f59e0b,#ef4444)|"
+            "linear-gradient(135deg,#f9a825,#ef6c00)|"
+            "linear-gradient(135deg,#34d399,#22c55e)|"
+            "linear-gradient(135deg,#f43f5e,#ef4444)|"
+            "linear-gradient(135deg,#a16207,#ca8a04)|"
+            "linear-gradient(135deg,#e11d48,#f97316)|"
+            "linear-gradient(135deg,#38bdf8,#6366f1)"
+        ) + ")")
         # 食材库种子（幂等）：从现有在库 / 待采购 / 菜谱食材去重收录，并补几个常用食材，
         # 保证「菜谱选食材」首个下拉非空，且旧数据里的食材名仍可选。
         for name, cat in conn.execute("SELECT name, cat FROM fridge_items"):
@@ -246,6 +256,10 @@ def init_db() -> None:
         for nm, ct in (("鸡蛋", "蛋奶"), ("番茄", "蔬菜"), ("米饭", "主食"), ("青菜", "蔬菜"),
                        ("五花肉", "肉类"), ("虾仁", "水产")):
             conn.execute("INSERT OR IGNORE INTO ingredients(name,cat) VALUES(?,?)", (nm, ct))
+        # 默认口味标签：给 user_id=1 种 6 个常用
+        default_tags = ['麻辣', '家常', '清淡', '快手', '下饭', '宴客']
+        for i, t in enumerate(default_tags):
+            conn.execute("INSERT OR IGNORE INTO taste_tags(user_id,name,sort) VALUES(1,?,?)", (t, i))
         conn.commit()
     finally:
         conn.close()

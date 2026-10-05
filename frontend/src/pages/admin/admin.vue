@@ -124,27 +124,7 @@
           </view>
         </template>
 
-        <!-- ============ 3. 封面图库 ============ -->
-        <template v-if="sec === 'covers'">
-          <view class="sec-h">
-            <text class="sh-t">封面图库</text>
-            <view class="sec-act"><button class="pbtn" @click="openModal('cover')">＋ 新增</button></view>
-          </view>
-          <view class="clist">
-            <view class="crow card" v-for="c in covers" :key="c.id">
-              <view class="cbox" :style="{ background: c.grad }"><text class="cem">{{ c.emoji }}</text></view>
-              <text class="cn">{{ c.name || ('封面 ' + c.id) }}</text>
-              <view class="sp"></view>
-              <button class="pbtn ghost" @click="moveCover(c, 'up')">↑</button>
-              <button class="pbtn ghost" @click="moveCover(c, 'down')">↓</button>
-              <button class="pbtn ghost" @click="editCover(c)">✎</button>
-              <button class="pbtn danger" @click="delCover(c)">✕</button>
-            </view>
-            <text class="none" v-if="!covers.length">还没有封面</text>
-          </view>
-        </template>
-
-        <!-- ============ 4. 食材大类（只管公共层 scope=public） ============ -->
+        <!-- ============ 3. 食材大类（只管公共层 scope=public） ============ -->
         <template v-if="sec === 'cat'">
           <view class="sec-h">
             <text class="sh-t">食材大类</text>
@@ -173,6 +153,7 @@
           <view class="grp" v-for="g in ingGroups" :key="g.cat">
             <text class="grp-t">{{ g.cat }}</text>
             <view class="row card" v-for="it in g.items" :key="it.id">
+              <text class="r-ic">{{ it.icon || catIcon(it.cat) }}</text>
               <text class="inm">{{ it.name }}</text>
               <view class="sp"></view>
               <button class="pbtn ghost" @click="openIngEdit(it)">✎</button>
@@ -201,6 +182,31 @@
               <view class="cfg-c"><text class="cfg-t">管理员口令</text><text class="cfg-s">登录管理端使用，保存后立即生效</text></view>
               <input class="num w160" :value="passcode" @blur="setPasscode" />
             </view>
+            <view class="cfg-row cfg-col">
+              <view class="cfg-head"><text class="cfg-ic">🥕</text><view class="cfg-c"><text class="cfg-t">食材图标池</text><text class="cfg-s">逗号分隔 emoji；食材新增/编辑时从这里选（与大类图标池独立）</text></view></view>
+              <textarea class="pool" v-model="ingPool" @blur="setIngPool" />
+              <view class="pool-preview">预览：<text v-for="ic in ingIcons" :key="ic" class="p-ic">{{ ic }}</text></view>
+            </view>
+            <view class="cfg-row cfg-col">
+              <view class="cfg-head"><text class="cfg-ic">🗂️</text><view class="cfg-c"><text class="cfg-t">大类图标池</text><text class="cfg-s">逗号分隔 emoji；食材列表里大类分组/食材 fallback 用</text></view></view>
+              <textarea class="pool" v-model="catPool" @blur="setCatPool" />
+              <view class="pool-preview">预览：<text v-for="ic in catIcons" :key="ic" class="p-ic">{{ ic }}</text></view>
+            </view>
+            <view class="cfg-row cfg-col">
+              <view class="cfg-head"><text class="cfg-ic">🍲</text><view class="cfg-c"><text class="cfg-t">菜谱图标池</text><text class="cfg-s">逗号分隔 emoji，参考菜谱 / 用户菜谱录入时从这里选</text></view></view>
+              <textarea class="pool" v-model="recipePool" @blur="setRecipePool" />
+              <view class="pool-preview">预览：<text v-for="ic in recipeIcons" :key="ic" class="p-ic">{{ ic }}</text></view>
+            </view>
+            <view class="cfg-row cfg-col">
+              <view class="cfg-head"><text class="cfg-ic">🏪</text><view class="cfg-c"><text class="cfg-t">餐厅图标池</text><text class="cfg-s">逗号分隔 emoji，餐厅收藏录入时从这里选</text></view></view>
+              <textarea class="pool" v-model="shopPool" @blur="setShopPool" />
+              <view class="pool-preview">预览：<text v-for="ic in shopIcons" :key="ic" class="p-ic">{{ ic }}</text></view>
+            </view>
+            <view class="cfg-row cfg-col">
+              <view class="cfg-head"><text class="cfg-ic">🎨</text><view class="cfg-c"><text class="cfg-t">封面渐变池</text><text class="cfg-s">| 分隔 linear-gradient；菜谱封面背景预设</text></view></view>
+              <textarea class="pool grad-pool" v-model="gradPool" @blur="setGradPool" />
+              <view class="pool-preview">预览：<view v-for="(g,i) in grads" :key="i" class="p-grad" :style="{ background: g }"></view></view>
+            </view>
           </view>
         </template>
       </view>
@@ -213,36 +219,19 @@
         <template v-if="modal.mode === 'ref'">
           <text class="d-title">{{ form.id ? '编辑参考菜谱' : '录入参考菜谱' }}</text>
           <input v-model="form.name" placeholder="菜名 *" class="di" />
-          <view class="dl-row"><text class="dl-l">Emoji</text><input v-model="form.em" placeholder="🍲" class="di" /></view>
+          <view class="d-sub">菜品 emoji <text class="t-12">点选候选或手动输入</text></view>
+          <view class="icon-grid">
+            <view v-for="ic in recipeIcons" :key="ic" class="icell" :class="{ on: form.em === ic }" @click="form.em = ic">{{ ic }}</view>
+          </view>
+          <input v-model="form.em" placeholder="或手动输入，如 🍲" class="di" />
           <view class="dl-row"><text class="dl-l">耗时</text><input v-model.number="form.time" type="number" placeholder="分钟" class="di" /></view>
           <view class="dl-row"><text class="dl-l">难度</text><input v-model="form.diff" placeholder="简单/中等/较难" class="di" /></view>
           <input v-model="form.tagsText" placeholder="口味标签，逗号分隔" class="di" />
           <input v-model="form.ingText" placeholder="所需食材，逗号分隔（如：鸡蛋,番茄）" class="di" />
           <textarea v-model="form.stepsText" placeholder="步骤，每行一步" class="dt" />
-          <view class="d-sub">封面点选</view>
-          <scroll-view scroll-x class="cover-scroll">
-            <view class="cover-row">
-              <view class="citem" :class="{ on: form.cover === '' }" @click="form.cover = ''">
-                <view class="cover-box" :style="{ background: DEFAULT_GRAD }"><text class="cem">🍽</text></view>
-                <text class="cover-nm">默认</text>
-              </view>
-              <view v-for="c in covers" :key="c.id" class="citem" :class="{ on: form.cover === String(c.id) }" @click="form.cover = String(c.id)">
-                <view class="cover-box" :style="{ background: c.grad }"><text class="cem">{{ c.emoji }}</text></view>
-                <text class="cover-nm">{{ c.name || c.id }}</text>
-              </view>
-            </view>
-          </scroll-view>
-        </template>
-
-        <!-- 封面新增/编辑 -->
-        <template v-if="modal.mode === 'cover'">
-          <text class="d-title">{{ form.id ? '编辑封面' : '新增封面' }}</text>
-          <view class="preview" :style="{ background: form.grad }"><text class="pem">{{ form.emoji || '🍽' }}</text></view>
-          <input v-model="form.emoji" placeholder="Emoji，如 🍜" class="di" />
-          <input v-model="form.name" placeholder="色调名（可选）" class="di" />
-          <view class="d-sub">渐变点选</view>
+          <view class="d-sub">封面渐变 <text class="t-12">点选预设</text></view>
           <view class="g-grid">
-            <view v-for="g in grads" :key="g" class="gcell" :class="{ on: form.grad === g }" :style="{ background: g }" @click="form.grad = g"></view>
+            <view v-for="g in grads" :key="g" class="gcell" :class="{ on: refCoverGrad === g }" :style="{ background: g }" @click="refCoverGrad = g"></view>
           </view>
         </template>
 
@@ -260,6 +249,11 @@
         <template v-if="modal.mode === 'ing'">
           <text class="d-title">{{ form.id ? '改公共食材' : '录公共食材' }}</text>
           <input v-model="form.name" placeholder="食材名，如：老抽" class="di" />
+          <view class="d-sub">图标 <text class="t-12">选专属 emoji（空则用大类图标）</text></view>
+          <view class="icon-grid">
+            <view class="icell" :class="{ on: !form.icon }" @click="form.icon = ''">✕</view>
+            <view v-for="ic in ingIcons" :key="ic" class="icell" :class="{ on: form.icon === ic }" @click="form.icon = ic">{{ ic }}</view>
+          </view>
           <view class="d-sub">归类到大类</view>
           <view class="chip-row">
             <view v-for="c in cats" :key="c.id" class="chip" :class="{ on: form.cat === c.name }" @click="form.cat = c.name">{{ c.icon }} {{ c.name }}</view>
@@ -278,7 +272,7 @@
 
         <view class="d-btns">
           <button class="pbtn ghost" @click="closeModal">取消</button>
-          <button class="pbtn" v-if="['ref','cover','cat','ing','user'].includes(modal.mode)" @click="save">保存</button>
+          <button class="pbtn" v-if="['ref','cat','ing','user'].includes(modal.mode)" @click="save">保存</button>
         </view>
       </view>
     </view>
@@ -286,20 +280,9 @@
 </template>
 
 <script>
-import { tipApi, recipeApi, coverApi, ingredientApi, catApi, configApi, adminApi } from '@/api'
+import { tipApi, recipeApi, ingredientApi, catApi, configApi, adminApi } from '@/api'
 
 const DEFAULT_GRAD = 'linear-gradient(135deg,#4b3fe3,#8b5cf6)'
-const grads = [
-  'linear-gradient(135deg,#4b3fe3,#8b5cf6)',
-  'linear-gradient(135deg,#ec4899,#f97316)',
-  'linear-gradient(135deg,#06b6d4,#3b82f6)',
-  'linear-gradient(135deg,#10b981,#a3e635)',
-  'linear-gradient(135deg,#8b5cf6,#d946ef)',
-  'linear-gradient(135deg,#f59e0b,#ef4444)',
-  'linear-gradient(135deg,#f9a825,#ef6c00)',
-  'linear-gradient(135deg,#34d399,#22c55e)'
-]
-const catIcons = ['🥬', '🍎', '🥩', '🦐', '🍄', '🥚', '🍚', '🧂', '🥗', '🌰', '🫘', '🧀']
 
 export default {
   data() {
@@ -309,20 +292,24 @@ export default {
         { k: 'users', ic: '👥', t: '用户管理' },
         { k: 'tips', ic: '👨‍🍳', t: '厨房技巧审核' },
         { k: 'ref', ic: '📚', t: '参考菜谱' },
-        { k: 'covers', ic: '🖼️', t: '封面图库' },
         { k: 'cat', ic: '🗂️', t: '食材大类' },
         { k: 'ing', ic: '🧺', t: '食材库' },
         { k: 'config', ic: '⚙️', t: '系统配置' }
       ],
-      DEFAULT_GRAD, grads, catIcons,
+      DEFAULT_GRAD,
       sec: 'stats', curName: '', isAdmin: false,
       // 登录
       loginCode: '', passcode: '',
       // 统计（仅公共资源计数）
       stats: { cards: {} },
       // 各列表数据
-      tips: [], refs: [], covers: [], cats: [], ingredients: [], users: [],
+      tips: [], refs: [], cats: [], ingredients: [], users: [],
       audit: true, expiry: 3,
+      catIcons: [], catPool: '',
+      ingIcons: [], ingPool: '',
+      recipeIcons: [], recipePool: '',
+      shopIcons: [], shopPool: '',
+      gradPool: '',
       // 搜索 / 筛选 / 分页
       tipQ: '', tipSt: 'all', tipLimit: 20, tipSts: [
         { k: 'all', t: '全部' }, { k: 'pending', t: '待审核' }, { k: 'approved', t: '已公开' }, { k: 'rejected', t: '未通过' }
@@ -341,7 +328,6 @@ export default {
         { ic: '📚', t: '参考菜谱', k: c.recipes_ref || 0 },
         { ic: '🧺', t: '食材库', k: c.ingredients || 0 },
         { ic: '🗂️', t: '大类', k: c.categories || 0 },
-        { ic: '🖼️', t: '封面图库', k: c.covers || 0 },
         { ic: '👨‍🍳', t: '技巧总数', k: c.tips_total || 0 },
         { ic: '⏳', t: '技巧待审', k: c.tips_pending || 0 }
       ]
@@ -376,6 +362,12 @@ export default {
         return a.localeCompare(b, 'zh')
       })
       return keyed.map((cat) => ({ cat, items: byCat[cat] }))
+    },
+    // 渐变预设列表：从 gradPool（|分隔）解析；空则回退 DEFAULT_GRAD
+    grads() {
+      if (!this.gradPool) return [DEFAULT_GRAD]
+      const arr = this.gradPool.split('|').map(s => s.trim()).filter(Boolean)
+      return arr.length ? arr : [DEFAULT_GRAD]
     }
   },
   onShow() {
@@ -384,6 +376,11 @@ export default {
     if (this.isAdmin) this.loadAll()
   },
   methods: {
+    // 根据大类名称查 icon（emoji），查不到回退 🥗
+    catIcon(catName) {
+      const c = this.cats.find((c) => c.name === catName)
+      return (c && c.icon) || '🥗'
+    },
     back() { uni.navigateBack() },
     // —— 登录门 ——
     async doLogin() {
@@ -403,27 +400,35 @@ export default {
       if (!this.isAdmin) return
       try {
         // 食材库 / 大类双层模型：管理端只读公共层（scope=public），用户端合并自己的补录
-        const [tips, refs, covers, cats, ingredients, users, st] = await Promise.all([
+        const [tips, refs, cats, ingredients, users, st] = await Promise.all([
           tipApi.list(this.curName, true),
           recipeApi.list('admin'),
-          coverApi.list(),
           catApi.list(1, true),
           ingredientApi.list(1, true),
           adminApi.users(),
           adminApi.stats()
         ])
-        this.tips = tips
+        // 后端 tips 返回 cat / pub，admin 模板用 category / public，这里做字段名对齐
+        this.tips = tips.map((t) => ({ ...t, category: t.cat || '', public: t.pub ? 1 : 0 }))
         this.refs = refs
-        this.covers = covers.map((c) => ({ ...c, grad: c.grad || DEFAULT_GRAD }))
         this.cats = cats.map((c) => ({ id: c.id, name: c.name, icon: c.icon || '🥗' }))
-        this.ingredients = ingredients.map((x) => ({ id: x.id, name: x.name, cat: x.cat || '其他' }))
+        this.ingredients = ingredients.map((x) => ({ id: x.id, name: x.name, cat: x.cat || '其他', icon: x.icon || '' }))
         this.users = users
         this.stats = st || this.stats
         // 配置
-        const [a, e, p] = await Promise.all([configApi.get('audit_enabled'), configApi.get('expiry_threshold_days'), configApi.get('admin_passcode')])
+        const [a, e, p, cp, ip, rp, sp, gp] = await Promise.all([configApi.get('audit_enabled'), configApi.get('expiry_threshold_days'), configApi.get('admin_passcode'), configApi.get('cat_icon_pool'), configApi.get('ingredient_icon_pool'), configApi.get('recipe_emoji_pool'), configApi.get('shop_icon_pool'), configApi.get('cover_grad_pool')])
         this.audit = (a.value === '1' || a.value === true || a.value === 1)
         this.expiry = Number(e.value)
         this.passcode = p.value
+        this.catPool = cp.value || ''
+        this.catIcons = (cp.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean)
+        this.ingPool = ip.value || ''
+        this.ingIcons = (ip.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean)
+        this.recipePool = rp.value || ''
+        this.recipeIcons = (rp.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean)
+        this.shopPool = sp.value || ''
+        this.shopIcons = (sp.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean)
+        this.gradPool = gp.value || ''
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
     // —— 用户管理 ——
@@ -448,7 +453,7 @@ export default {
         success: (res) => { if (res.confirm) catApi.del(c.id, 1, true).then(this.loadAll) } })
     },
     // —— 食材库（只管公共层） ——
-    openIngEdit(it) { this.form = { id: it.id, name: it.name, cat: it.cat }; this.modal = { show: true, mode: 'ing', id: it.id } },
+    openIngEdit(it) { this.form = { id: it.id, name: it.name, cat: it.cat, icon: it.icon || '' }; this.modal = { show: true, mode: 'ing', id: it.id } },
     delIng(it) {
       uni.showModal({ title: '移除公共食材', content: `从公共食材库移除「${it.name}」？用户自己补录的不受影响。`, confirmText: '移除', confirmColor: '#e64340',
         success: (res) => { if (res.confirm) ingredientApi.del(it.id, 1, true).then(this.loadAll) } })
@@ -459,13 +464,16 @@ export default {
     async reject(t) { await tipApi.reject(t.id); this.loadAll() },
     // —— 参考菜谱 编辑/删除 ——
     editRef(r) {
+      // cover 直接存渐变字符串（旧 "emoji|grad" 格式兼容：取 | 后半段）
+      let grad = r.cover || ''
+      if (grad.includes('|')) grad = grad.split('|', 1)[1] || ''
       this.form = {
         id: r.id, name: r.name, em: r.em, time: r.time || 0, diff: r.diff || '简单',
         tagsText: (r.tags || []).join('、'),
         ingText: (r.ing || []).map((i) => i.name || i).join('、'),
         stepsText: (r.steps || []).join('\n'),
-        cover: r.cover === undefined || r.cover === null || r.cover === '' ? '' : String(r.cover)
       }
+      this.refCoverGrad = grad || ''
       this.modal = { show: true, mode: 'ref', id: r.id }
     },
     delRef(r) {
@@ -473,13 +481,6 @@ export default {
         title: '删除参考菜谱', content: `删除「${r.name}」？若已加入「吃这些」会一并移除。`, confirmText: '删除', confirmColor: '#e64340',
         success: (res) => { if (res.confirm) recipeApi.del(r.id).then(this.loadAll) }
       })
-    },
-    // —— 封面 ——
-    moveCover(c, dir) { coverApi.move(c.id, dir).then(this.loadAll) },
-    editCover(c) { this.form = { id: c.id, emoji: c.emoji, name: c.name || '', grad: c.grad || DEFAULT_GRAD }; this.modal = { show: true, mode: 'cover', id: c.id } },
-    delCover(c) {
-      uni.showModal({ title: '删除封面', content: `删除「${c.name || c.emoji}」？用它的菜谱会回到默认封面色。`, confirmText: '删除', confirmColor: '#e64340',
-        success: (res) => { if (res.confirm) coverApi.del(c.id).then(this.loadAll) } })
     },
     // —— 食材大类（全局共享） ——
     openCatAdd() { this.form = { id: null, name: '', icon: '🥗' }; this.modal = { show: true, mode: 'cat', id: null } },
@@ -501,24 +502,58 @@ export default {
       this.passcode = v
       configApi.set('admin_passcode', v)
     },
+    setIngPool() {
+      const v = (this.ingPool || '').trim()
+      const list = v.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+      if (!list.length) return uni.showToast({ title: '至少留一个 emoji', icon: 'none' })
+      this.ingIcons = list
+      configApi.set('ingredient_icon_pool', v)
+      uni.showToast({ title: '已保存', icon: 'success' })
+    },
+    setCatPool() {
+      const v = (this.catPool || '').trim()
+      const list = v.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+      if (!list.length) return uni.showToast({ title: '至少留一个 emoji', icon: 'none' })
+      this.catIcons = list
+      configApi.set('cat_icon_pool', v)
+      uni.showToast({ title: '已保存', icon: 'success' })
+    },
+    setRecipePool() {
+      const v = (this.recipePool || '').trim()
+      const list = v.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+      if (!list.length) return uni.showToast({ title: '至少留一个 emoji', icon: 'none' })
+      this.recipeIcons = list
+      configApi.set('recipe_emoji_pool', v)
+      uni.showToast({ title: '已保存', icon: 'success' })
+    },
+    setShopPool() {
+      const v = (this.shopPool || '').trim()
+      const list = v.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+      if (!list.length) return uni.showToast({ title: '至少留一个 emoji', icon: 'none' })
+      this.shopIcons = list
+      configApi.set('shop_icon_pool', v)
+      uni.showToast({ title: '已保存', icon: 'success' })
+    },
+    setGradPool() {
+      const v = (this.gradPool || '').trim()
+      const list = v.split('|').map(s => s.trim()).filter(Boolean)
+      if (!list.length) return uni.showToast({ title: '至少留一个渐变', icon: 'none' })
+      configApi.set('cover_grad_pool', v)
+      uni.showToast({ title: '已保存', icon: 'success' })
+    },
     // —— 弹窗 ——
     openModal(mode) {
-      if (mode === 'cover') { this.form = { id: null, emoji: '🍽', name: '', grad: DEFAULT_GRAD } }
-      else if (mode === 'ref') { this.form = { id: null, name: '', em: '🍲', time: 20, diff: '简单', tagsText: '', ingText: '', stepsText: '', cover: '' } }
+      if (mode === 'ref') {
+        this.form = { id: null, name: '', em: '🍲', time: 20, diff: '简单', tagsText: '', ingText: '', stepsText: '' }
+        this.refCoverGrad = ''
+      }
       else if (mode === 'cat') { this.form = { id: null, name: '', icon: '🥗' } }
-      else if (mode === 'ing') { this.form = { id: null, name: '', cat: (this.cats[0] && this.cats[0].name) || '其他' } }
+      else if (mode === 'ing') { this.form = { id: null, name: '', cat: (this.cats[0] && this.cats[0].name) || '其他', icon: '' } }
       this.modal = { show: true, mode, id: null }
     },
     closeModal() { this.modal = { show: false, mode: '', id: null } },
     save() {
       const mode = this.modal.mode
-      if (mode === 'cover') {
-        const emoji = (this.form.emoji || '').trim()
-        if (!emoji) return uni.showToast({ title: '请填 Emoji', icon: 'none' })
-        const body = { emoji, name: (this.form.name || '').trim(), grad: this.form.grad || DEFAULT_GRAD }
-        const p = this.form.id ? coverApi.update(this.form.id, body) : coverApi.create(body)
-        return p.then(() => { this.closeModal(); this.loadAll() }).catch((e) => uni.showToast({ title: e.message, icon: 'none' }))
-      }
       if (mode === 'cat') {
         const name = (this.form.name || '').trim()
         if (!name) return uni.showToast({ title: '名称不能为空', icon: 'none' })
@@ -531,7 +566,7 @@ export default {
       if (mode === 'ing') {
         const name = (this.form.name || '').trim()
         if (!name) return uni.showToast({ title: '名称不能为空', icon: 'none' })
-        const body = { name, cat: this.form.cat || '其他' }
+        const body = { name, cat: this.form.cat || '其他', icon: this.form.icon || '' }
         const p = this.form.id
           ? ingredientApi.update(this.form.id, body, 1, true)
           : ingredientApi.create(body, 1, true)
@@ -553,11 +588,10 @@ export default {
     saveRef() {
       const name = (this.form.name || '').trim()
       if (!name) return uni.showToast({ title: '请填菜名', icon: 'none' })
-      const picked = this.covers.find((c) => String(c.id) === String(this.form.cover))
       const data = {
         source: 'admin',
-        name, em: picked ? picked.emoji : (this.form.em || '🍲'),
-        cover: picked ? String(picked.id) : '',
+        name, em: this.form.em || '🍲',
+        cover: this.refCoverGrad || '',
         time: this.form.time || 20, diff: this.form.diff || '简单',
         tags: (this.form.tagsText || '').split(/[，,、\s]+/).filter(Boolean),
         ing: (this.form.ingText || '').split(/[，,、]+/).map((x) => x.trim()).filter(Boolean).map((n) => ({ name: n, qty: 1, unit: '份' })),
@@ -670,6 +704,7 @@ export default {
 
 /* ingredients */
 .cic { font-size: 20px; }
+.r-ic { font-size: 20px; margin-right: 6px; }
 .inm { font-size: 14px; }
 .grp { margin-bottom: 16px; }
 .grp-t { display: block; font-size: 12px; color: #888; margin-bottom: 8px; }
@@ -686,6 +721,13 @@ export default {
 .cfg-s { font-size: 12px; color: #888; }
 .num { border: 1px solid #e5e6eb; border-radius: 8px; height: 34px; width: 96px; text-align: right; padding: 0 10px; box-sizing: border-box; font-size: 13px; }
 .w160 { width: 160px; text-align: left; letter-spacing: 2px; }
+.cfg-col { flex-direction: column; align-items: stretch; gap: 10px; padding: 16px 0; }
+.cfg-head { display: flex; align-items: center; gap: 12px; }
+.pool { border: 1px solid #e5e6eb; border-radius: 8px; padding: 8px 12px; font-size: 13px; min-height: 44px; box-sizing: border-box; resize: vertical; line-height: 1.5; }
+.pool-preview { font-size: 13px; color: #888; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.p-ic { margin-right: 6px; font-size: 18px; }
+.p-grad { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #e0e0e0; display: inline-block; }
+.grad-pool { font-family: monospace; font-size: 11px; }
 
 /* 弹窗 */
 .mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 24px; }
@@ -702,7 +744,7 @@ export default {
 .g-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .gcell { aspect-ratio: 1; border-radius: 8px; border: 3px solid transparent; box-sizing: border-box; cursor: pointer; }
 .gcell.on { border-color: #4b3fe3; }
-.icon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+.icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-height: 280px; overflow-y: auto; align-content: start; }
 .icell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 26px; background: #f6f6f8; border-radius: 8px; border: 2px solid transparent; cursor: pointer; }
 .icell.on { border-color: #4b3fe3; background: #efeaff; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 10px; }

@@ -72,13 +72,6 @@ export const catApi = {
 }
 
 // 封面图库：管理员维护的固定封面（emoji+渐变），菜谱编辑时点选，渲染用之
-export const coverApi = {
-  list: () => req.get('/covers'),
-  create: (data) => req.post('/covers', data),
-  update: (id, data) => req.put(`/covers/${id}`, data),
-  move: (id, dir) => req.post(`/covers/${id}/move`, { dir }),
-  del: (id) => req.del(`/covers/${id}`)
-}
 
 export const candidateApi = {
   list: () => req.get('/candidates'),
@@ -96,6 +89,14 @@ export const dinerApi = {
   update: (id, data) => req.put(`/diners/${id}`, data),
   updateTags: (id, tags) => req.put(`/diners/${id}/tags`, { tags }),
   del: (id) => req.del(`/diners/${id}`)
+}
+
+export const tasteApi = {
+  list: () => req.get('/taste-tags'),
+  create: (name) => req.post('/taste-tags', { name }),
+  update: (id, name) => req.put(`/taste-tags/${id}`, { name }),
+  del: (id) => req.del(`/taste-tags/${id}`),
+  reorder: (ids) => req.put('/taste-tags/reorder', ids)
 }
 
 export const tipApi = {

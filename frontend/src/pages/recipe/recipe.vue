@@ -71,11 +71,13 @@
         </scroll-view>
       </view>
 
-      <!-- ============ 全部菜谱（标题行右侧为新建入口） ============ -->
+      <!-- ============ 全部菜谱：tab 切换（参考 / 我的） ============ -->
       <view class="section">
-        <view class="sec-tit">
-          全部菜谱
-          <text class="newlink" @tap="newRecipe">＋ 新建菜谱</text>
+        <view class="rec-tabs">
+          <view class="rec-tab" :class="{ on: tab === 'ref' }" @tap="tab = 'ref'">参考菜谱<text class="rec-tab-cnt">({{ refCount }})</text></view>
+          <view class="rec-tab" :class="{ on: tab === 'my' }" @tap="tab = 'my'">我的菜谱<text class="rec-tab-cnt">({{ myCount }})</text></view>
+          <view class="flex-sp"></view>
+          <text class="newlink" v-if="tab === 'my'" @tap="newRecipe">＋ 新建</text>
         </view>
         <view class="rec-list">
           <view class="rec-card" v-for="r in shownRecipes" :key="r.id">
@@ -102,7 +104,7 @@
           </view>
         </view>
         <view class="section-empty" v-if="!shownRecipes.length">
-          <text class="empty-tip">没有符合条件的菜谱</text>
+          <text class="empty-tip">{{ tab === 'ref' ? '暂无参考菜谱' : '还没有自己的菜谱，点右上角「＋ 新建」开始吧' }}</text>
         </view>
       </view>
 
@@ -114,7 +116,7 @@
 </template>
 
 <script>
-import { recipeApi, candidateApi, recordApi } from '@/api'
+import { recipeApi, candidateApi, recordApi, tasteApi } from '@/api'
 
 // 默认封面渐变（未选固定封面时按 id 轮换），与后端默认种子色彩一致
 const WHEEL = [
@@ -132,19 +134,30 @@ export default {
       cands: [],        // 吃这些候选（含 timer）
       recipes: [],      // 全部菜谱
       records: [],      // 饮食记录（用于「记一笔」当日去重）
-      selKey: '',       // 当前筛选：'' 全部 / 'my' 'admin' 来源 / tag 名
-      filterList: [],   // 横滑筛选项 [{key,label}]（预设 + 动态 tag）
+      tab: 'ref',       // 当前 tab：ref=参考菜谱 / my=我的菜谱
+      selKey: '',       // 当前筛选：'' 全部 / tag 名
+      filterList: [],   // 横滑筛选项 [{key,label}]
+      allTasteTags: [], // 用户维护的口味标签全量（来自 tasteApi）
       tick: null,       // 计时间隔句柄
       today: ''         // 今天日期 YYYY-MM-DD
     }
   },
   computed: {
+    // 按 tab 先筛 source，再按 selKey 筛 tag
     shownRecipes() {
-      // 筛选：来源（我的/参考）按 source，其余按口味 tag 精确匹配
-      if (this.selKey === 'my') return this.recipes.filter((r) => r.source === 'my')
-      if (this.selKey === 'admin') return this.recipes.filter((r) => r.source === 'admin')
-      if (!this.selKey) return this.recipes
-      return this.recipes.filter((r) => (r.tags || []).includes(this.selKey))
+      const source = this.tab === 'ref' ? 'admin' : 'my'
+      const list = this.recipes.filter((r) => r.source === source)
+      if (!this.selKey) return list
+      return list.filter((r) => (r.tags || []).includes(this.selKey))
+    },
+    refCount() { return this.recipes.filter((r) => r.source === 'admin').length },
+    myCount() { return this.recipes.filter((r) => r.source === 'my').length }
+  },
+  watch: {
+    // tab 切换：重置筛选关键字 + 重建 filterList（只聚合当前 tab 的 tag）
+    tab() {
+      this.selKey = ''
+      this.buildFilterList()
     }
   },
   onShow() {
@@ -166,31 +179,27 @@ export default {
   methods: {
     async load() {
       try {
-        const [cands, recipes, records] = await Promise.all([candidateApi.list(), recipeApi.list(), recordApi.list()])
+        const [cands, recipes, records, tags] = await Promise.all([candidateApi.list(), recipeApi.list(), recordApi.list(), tasteApi.list().catch(() => [])])
         this.cands = cands
         this.recipes = recipes
         this.records = records
+        // 缓存用户维护的口味标签名（用于筛选 chip + recipe-edit 的 tag 候选）
+        this.allTasteTags = (tags || []).map((t) => t.name).filter(Boolean)
         this.buildFilterList()
       } catch (e) {
         uni.showToast({ title: e.message, icon: 'none' })
       }
     },
-    // 组装横滑筛选项：对齐第一版预设（全部/快手/🌶辣/素/下饭/来源）+ 动态口味 tag
+    // 组装横滑筛选项：「全部」+ 用户维护的口味标签 + 菜谱实际用到的其他 tag
     buildFilterList() {
-      const preset = [
-        { key: '', label: '全部' },
-        { key: '快手', label: '快手' },
-        { key: '辣', label: '🌶 辣' },
-        { key: '素', label: '素' },
-        { key: '下饭', label: '下饭' },
-        { key: 'my', label: '我的菜谱' },
-        { key: 'admin', label: '参考菜谱' }
-      ]
-      const presetKeys = preset.map((f) => f.key)
-      const list = [...preset]
-      this.recipes.forEach((r) => (r.tags || []).forEach((t) => {
-        if (!presetKeys.includes(t) && !list.some((f) => f.key === t)) list.push({ key: t, label: t })
-      }))
+      const list = [{ key: '', label: '全部' }]
+      const source = this.tab === 'ref' ? 'admin' : 'my'
+      const sourceRecipes = this.recipes.filter((r) => r.source === source)
+      const keys = new Set([''])
+      // 1. 用户维护的口味标签优先
+      this.allTasteTags.forEach((t) => { if (!keys.has(t)) { keys.add(t); list.push({ key: t, label: t }) } })
+      // 2. 菜谱实际用到的 tag 补齐
+      sourceRecipes.forEach((r) => (r.tags || []).forEach((t) => { if (!keys.has(t)) { keys.add(t); list.push({ key: t, label: t }) } }))
       this.filterList = list
     },
     fmt(sec) {
@@ -330,6 +339,21 @@ export default {
   display: flex; align-items: center; justify-content: space-between;
   font-size: 32rpx; font-weight: 700; margin: 6rpx 0 16rpx; padding-top: 8rpx;
 }
+/* tab 切换（参考 / 我的） */
+.rec-tabs {
+  display: flex; align-items: center; gap: 12rpx;
+  margin: 6rpx 0 16rpx; padding-top: 8rpx;
+}
+.rec-tab {
+  font-size: 32rpx; font-weight: 500; color: var(--text-2);
+  padding: 12rpx 24rpx; border-radius: 999rpx;
+  background: var(--bg, #f5f5f5);
+  transition: all .15s;
+}
+.rec-tab.on {
+  background: var(--brand); color: #fff; font-weight: 700;
+}
+.rec-tab-cnt { font-size: 24rpx; margin-left: 4rpx; opacity: .75; }
 .newlink { color: var(--brand); font-size: 26rpx; font-weight: 400; flex-shrink: 0; }
 
 /* 口味筛选横滑单行 */

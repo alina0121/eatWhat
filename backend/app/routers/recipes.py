@@ -56,11 +56,14 @@ def _get(conn: Connection, rid: int):
 
 
 def _enrich_cover(conn: Connection, d: dict) -> dict:
-    """给菜谱附上所选封面的渐变（用于渲染背景）；没选封面时 coverGrad 为空走默认轮换。"""
-    cid = d.get("cover")
-    if cid:
-        cv = conn.execute("SELECT grad FROM covers WHERE id=?", (cid,)).fetchone()
-        d["coverGrad"] = cv["grad"] if cv else ""
+    """cover 字段直接存渐变字符串（或空=默认轮换），解析后返回 coverGrad。"""
+    raw = d.get("cover") or ""
+    if raw:
+        # 兼容旧格式 "emoji|grad"：只取 grad 部分
+        if "|" in raw:
+            d["coverGrad"] = raw.split("|", 1)[1] or ""
+        else:
+            d["coverGrad"] = raw
     return d
 
 

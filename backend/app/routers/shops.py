@@ -20,6 +20,7 @@ class ShopIn(BaseModel):
     arr_min: int = 0
     transport: str = "步行"
     tags: List[str] = []      # 口味标签
+    icon: str = "🏪"
 
 
 class ShopPatch(BaseModel):
@@ -32,6 +33,7 @@ class ShopPatch(BaseModel):
     arr_min: Optional[int] = None
     transport: Optional[str] = None
     tags: Optional[List[str]] = None
+    icon: Optional[str] = None
 
 
 def _get(conn: Connection, sid: int):
@@ -50,10 +52,10 @@ def list_shops(conn: Connection = Depends(get_db)):
 @router.post("")
 def create_shop(body: ShopIn, conn: Connection = Depends(get_db)):
     cur = conn.execute(
-        "INSERT INTO shops(name,type,price,star,must,note,arr_min,transport,tags) "
-        "VALUES(?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO shops(name,type,price,star,must,note,arr_min,transport,tags,icon) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?)",
         (body.name, body.type, body.price, body.star, jdump(body.must),
-         body.note, body.arr_min, body.transport, jdump(body.tags)),
+         body.note, body.arr_min, body.transport, jdump(body.tags), body.icon or '🏪'),
     )
     return {"id": cur.lastrowid, "ok": True}
 
