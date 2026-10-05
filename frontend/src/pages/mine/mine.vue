@@ -79,9 +79,6 @@
           <view class="mrow" @tap="nav('/pages/mine-ingredients/mine-ingredients')">
             <text class="ic">🧺</text><view class="m1"><text class="mt">食材库</text><text class="ms">菜谱可选食材 · 独立维护</text></view><text class="ar">›</text>
           </view>
-          <view class="mrow" @tap="nav('/pages/mine-settings/mine-settings')">
-            <text class="ic">⚙️</text><view class="m1"><text class="mt">设置</text><text class="ms">账号 · 数据 · 关于</text></view><text class="ar">›</text>
-          </view>
           <view class="mrow" v-if="isPc" @tap="nav('/pages/admin/admin')">
             <text class="ic">🖥️</text><view class="m1"><text class="mt">管理端（PC）</text><text class="ms">审核 · 图库 · 食材 · 餐厅 · 配置</text></view><text class="ar">›</text>
           </view>
