@@ -49,8 +49,8 @@ export const fridgeApi = {
 export const ingredientApi = {
   list: (user = getCurUser(), publicOnly = false) =>
     req.get(`/ingredients?user=${user}${publicOnly ? '&public_only=1' : ''}`),
-  create: (data, user = getCurUser(), public = false) =>
-    req.post(`/ingredients?user=${user}${public ? '&public=1' : ''}`, data),
+  create: (data, user = getCurUser(), isPublic = false) =>
+    req.post(`/ingredients?user=${user}${isPublic ? '&public=1' : ''}`, data),
   update: (id, data, user = getCurUser(), admin = false) =>
     req.put(`/ingredients/${id}?user=${user}${admin ? '&admin=1' : ''}`, data),
   del: (id, user = getCurUser(), admin = false) =>
@@ -61,8 +61,8 @@ export const ingredientApi = {
 export const catApi = {
   list: (user = getCurUser(), publicOnly = false) =>
     req.get(`/categories?user=${user}${publicOnly ? '&public_only=1' : ''}`),
-  create: (data, user = getCurUser(), public = false) =>
-    req.post(`/categories?user=${user}${public ? '&public=1' : ''}`, data),
+  create: (data, user = getCurUser(), isPublic = false) =>
+    req.post(`/categories?user=${user}${isPublic ? '&public=1' : ''}`, data),
   update: (id, data, user = getCurUser(), admin = false) =>
     req.put(`/categories/${id}?user=${user}${admin ? '&admin=1' : ''}`, data),
   move: (id, dir, user = getCurUser(), admin = false) =>
