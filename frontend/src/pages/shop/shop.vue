@@ -144,7 +144,7 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.page-header { display:flex; align-items:baseline; justify-content:space-between; padding:20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); }
+.page-header { display:flex; align-items:baseline; justify-content:space-between; padding:20rpx var(--nav-safe-right) 20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); }
 .page-title { font-size:44rpx; font-weight:700; }
 .newlink { color:var(--brand); font-size:26rpx; }
 .section { padding: 12rpx 24rpx; }

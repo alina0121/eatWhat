@@ -114,10 +114,10 @@ export default {
 
 <style lang="scss" scoped>
 .npage { min-height: 100vh; background: #f6f7fb; padding-top: calc(env(safe-area-inset-top) + 88rpx); }
-.nheader { position: fixed; top: 0; left: 0; right: 0; z-index: 10; height: 88rpx; display: flex; align-items: center; background: var(--brand, #4b3fe3); color: #fff; padding-top: env(safe-area-inset-top); box-sizing: content-box; }
+.nheader { position: fixed; top: 0; left: 0; right: 0; z-index: 10; height: 88rpx; display: flex; align-items: center; background: var(--brand, #4b3fe3); color: #fff; padding: 0 var(--nav-safe-right) 0 24rpx; padding-top: env(safe-area-inset-top); box-sizing: content-box; }
 .back { width: 88rpx; text-align: center; font-size: 44rpx; }
 .ntitle { flex: 1; font-size: 32rpx; font-weight: 700; }
-.add { padding-right: 24rpx; font-size: 26rpx; }
+.add { padding-right: 8rpx; font-size: 26rpx; }
 .nscroll { height: 100vh; }
 .section { margin: 16rpx 24rpx; }
 .sub { font-size: 26rpx; font-weight: 700; color: #333; margin: 8rpx 0 16rpx; display: flex; align-items: baseline; gap: 14rpx; }

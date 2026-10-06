@@ -64,10 +64,10 @@ export default {
 
 <style lang="scss" scoped>
 .npage { min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; }
-.nheader { display: flex; align-items: center; padding: 20rpx 24rpx; padding-top: calc(env(safe-area-inset-top) + 20rpx); background: var(--card); }
+.nheader { display: flex; align-items: center; padding: 20rpx var(--nav-safe-right) 20rpx 24rpx; padding-top: calc(env(safe-area-inset-top) + 20rpx); background: var(--card); }
 .nav-back { font-size: 30rpx; color: var(--brand); white-space: nowrap; flex-shrink: 0; padding-right: 20rpx; }
 .ntitle { flex: 1; text-align: center; font-size: 34rpx; font-weight: 700; }
-.nright { width: 100rpx; flex-shrink: 0; }
+.nright { width: 40rpx; flex-shrink: 0; }
 .nscroll { flex: 1; }
 .scroll-inner { box-sizing: border-box; padding: 0 24rpx; }
 .sec-tit { font-size: 26rpx; color: var(--text-2); padding: 24rpx 4rpx 4rpx; }

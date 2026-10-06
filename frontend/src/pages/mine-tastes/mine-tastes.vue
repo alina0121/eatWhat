@@ -1,4 +1,4 @@
-﻿<!-- mine-tastes.vue —— 口味标签维护（全局唯一来源）
+<!-- mine-tastes.vue —— 口味标签维护（全局唯一来源）
   用户自己增/删/改名，所有地方的口味 chips 都从这里取。
 -->
 <template>
@@ -94,7 +94,7 @@ export default {
 
 <style>
 .npage { min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; }
-.nheader { display: flex; align-items: center; gap: 12rpx; padding: calc(env(safe-area-inset-top) + 16rpx) 24rpx 16rpx; position: sticky; top: 0; background: var(--surface); z-index: 10; }
+.nheader { display: flex; align-items: center; gap: 12rpx; padding: calc(env(safe-area-inset-top) + 16rpx) var(--nav-safe-right) 16rpx 24rpx; position: sticky; top: 0; background: var(--surface); z-index: 10; }
 .back { font-size: 44rpx; color: var(--brand); padding-right: 20rpx; white-space: nowrap; }
 .ntitle { flex: 1; text-align: center; font-size: 34rpx; font-weight: 700; }
 .add { font-size: 28rpx; color: var(--brand); padding: 12rpx 24rpx; border-radius: 999rpx; box-shadow: inset 0 0 0 2rpx var(--brand); }

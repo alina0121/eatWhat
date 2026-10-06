@@ -343,9 +343,9 @@ export default {
 
 <style lang="scss" scoped>
 .npage { display:flex; flex-direction:column; min-height:100vh; background:var(--bg); }
-.nheader { display:flex; align-items:center; gap:16rpx; padding:calc(env(safe-area-inset-top) + 16rpx) 24rpx 16rpx; position:sticky; top:0; background:var(--surface); z-index:10; }
+.nheader { display:flex; align-items:center; gap:16rpx; padding:calc(env(safe-area-inset-top) + 16rpx) var(--nav-safe-right) 16rpx 24rpx; position:sticky; top:0; background:var(--surface); z-index:10; }
 .back { font-size:44rpx; color:var(--text); font-weight:600; }
-.ntitle { flex:1; text-align:center; font-size:34rpx; font-weight:700; padding-right:120rpx; }
+.ntitle { flex:1; text-align:center; font-size:34rpx; font-weight:700; }
 .save { color:var(--brand); font-size:28rpx; }
 .nscroll { flex:1; }
 /* 水平留白放内层 wrapper，box-sizing:border-box 保证 width:100% 含 padding，避免 scroll-view 内容溢出导致右侧被裁 */

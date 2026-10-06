@@ -236,7 +236,7 @@ export default {
 
 <style lang="scss" scoped>
 .npage { display:flex; flex-direction:column; height:100vh; background:var(--bg); }
-.nheader { display:flex; align-items:center; gap:16rpx; padding:calc(env(safe-area-inset-top) + 16rpx) 24rpx 16rpx; }
+.nheader { display:flex; align-items:center; gap:16rpx; padding:calc(env(safe-area-inset-top) + 16rpx) var(--nav-safe-right) 16rpx 24rpx; }
 .back { font-size:48rpx; font-weight:600; }
 .ntitle { font-size:36rpx; font-weight:700; flex:1; }
 .add { color:var(--brand); font-size:26rpx; }

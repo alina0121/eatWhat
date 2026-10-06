@@ -1,4 +1,4 @@
-﻿<!-- fridge.vue —— 冰箱页：在库 + 待采购
+<!-- fridge.vue —— 冰箱页：在库 + 待采购
   在库状态（充足/临期/已过期）由后端实时现算；待采购可由候选代号入，本页支持手工增删。
 -->
 <template>
@@ -173,7 +173,7 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.page-header { display:flex; align-items:baseline; gap:16rpx; padding:20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); }
+.page-header { display:flex; align-items:baseline; gap:16rpx; padding:20rpx var(--nav-safe-right) 20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); }
 .page-title { font-size:44rpx; font-weight:700; }
 .section { padding: 12rpx 24rpx; }
 .sec-head { display:flex; align-items:center; justify-content:space-between; margin: 6rpx 0 16rpx; }

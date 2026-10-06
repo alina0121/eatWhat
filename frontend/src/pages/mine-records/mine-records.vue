@@ -1,4 +1,4 @@
-﻿<!-- mine-records.vue —— 饮食记录（对齐第一版UI设计稿 p-records）
+<!-- mine-records.vue —— 饮食记录（对齐第一版UI设计稿 p-records）
   结构：顶部标题＋记一笔 / 当月日历聚合（有记录的天打点）/ 选中日明细 rec-item 列表。
   数据：后端 record 只含 date/name/type(cook|out|delivery)，类型图标按 type 映射，不读不存在的 category。
 -->
@@ -185,7 +185,7 @@ export default {
 
 <style lang="scss" scoped>
 .npage { display:flex; flex-direction:column; height:100vh; background:var(--bg); }
-.nheader { display:flex; align-items:center; gap:16rpx; padding:calc(env(safe-area-inset-top) + 16rpx) 24rpx 16rpx; }
+.nheader { display:flex; align-items:center; gap:16rpx; padding:calc(env(safe-area-inset-top) + 16rpx) var(--nav-safe-right) 16rpx 24rpx; }
 .back { font-size:48rpx; font-weight:600; }
 .ntitle { flex:1; text-align:center; font-size:36rpx; font-weight:700; }
 .add { font-size:26rpx; color:var(--brand); }

@@ -215,7 +215,7 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.page-header { display:flex; align-items:baseline; gap:16rpx; padding:20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); }
+.page-header { display:flex; align-items:baseline; gap:16rpx; padding:20rpx var(--nav-safe-right) 20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); }
 .page-title { font-size:44rpx; font-weight:700; }
 .section { padding: 12rpx 24rpx; }
 .sec-head { display:flex; align-items:center; justify-content:space-between; margin:6rpx 0 16rpx; }

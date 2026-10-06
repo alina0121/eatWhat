@@ -1,4 +1,4 @@
-﻿<!-- mine-tips.vue —— 厨房技巧：所有用户可见+可新增；只可改/删自己的；
+<!-- mine-tips.vue —— 厨房技巧：所有用户可见+可新增；只可改/删自己的；
   新增/修改需管理员审核（audit_enabled 配置）；待审核⏳/已公开✅/未通过🚫。
   管理员审核开关仅在管理端系统配置里出现，用户端不暴露。
 -->
@@ -95,7 +95,7 @@ export default {
 
 <style lang="scss" scoped>
 .npage { display:flex; flex-direction:column; height:100vh; background:var(--bg); }
-.nheader { display:flex; align-items:center; gap:16rpx; padding:calc(env(safe-area-inset-top) + 16rpx) 24rpx 16rpx; }
+.nheader { display:flex; align-items:center; gap:16rpx; padding:calc(env(safe-area-inset-top) + 16rpx) var(--nav-safe-right) 16rpx 24rpx; }
 .back { font-size:48rpx; font-weight:600; }
 .ntitle { font-size:36rpx; font-weight:700; flex:1; }
 .add { color:var(--brand); font-size:26rpx; }

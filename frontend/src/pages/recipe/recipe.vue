@@ -299,7 +299,7 @@ export default {
   display: flex;
   align-items: baseline;
   gap: 16rpx;
-  padding: 20rpx 24rpx;
+  padding: 20rpx var(--nav-safe-right) 20rpx 24rpx;
   padding-top: calc(env(safe-area-inset-top) + 20rpx);
 }
 .page-title { font-size: 44rpx; font-weight: 700; }

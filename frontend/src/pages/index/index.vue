@@ -229,7 +229,7 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.page-header { padding:20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); }
+.page-header { padding:20rpx var(--nav-safe-right) 20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); }
 .page-title { font-size:44rpx; font-weight:700; }
 .section { padding: 12rpx 24rpx; }
 

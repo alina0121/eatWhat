@@ -198,7 +198,7 @@ export default {
 
 <style lang="scss" scoped>
 .npage { display:flex; flex-direction:column; min-height:100vh; background:var(--bg); }
-.nheader { display:flex; align-items:center; gap:16rpx; padding:calc(env(safe-area-inset-top) + 16rpx) 24rpx 16rpx; position:sticky; top:0; background:var(--surface); z-index:10; }
+.nheader { display:flex; align-items:center; gap:16rpx; padding:calc(env(safe-area-inset-top) + 16rpx) var(--nav-safe-right) 16rpx 24rpx; position:sticky; top:0; background:var(--surface); z-index:10; }
 .back { font-size:44rpx; color:var(--text); font-weight:600; }
 .segs { flex:1; display:flex; background:var(--bg); border-radius:999rpx; padding:6rpx; margin:0 auto; max-width:280rpx; }
 .seg { flex:1; text-align:center; font-size:26rpx; color:var(--text-2); padding:10rpx 0; border-radius:999rpx; }

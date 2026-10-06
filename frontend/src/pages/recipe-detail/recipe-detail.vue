@@ -1,4 +1,4 @@
-﻿<!-- recipe-detail.vue —— 菜谱详情：对齐原型 openDish
+<!-- recipe-detail.vue —— 菜谱详情：对齐原型 openDish
   结构：大封面 → 名称+我的/参考徽章 → 🕐耗时·🧑🍳难度的 meta → 口味tag
        → 步骤（编号圆+文本）→ 食材清单（在库✓勾选 + 名称 + 数量）
        → 操作区：列表进入=「＋候选」+（我的→编辑菜谱 / 参考→存进我的菜谱）
@@ -180,7 +180,7 @@ export default {
 
 <style lang="scss" scoped>
 .page { min-height:100vh; background:var(--bg); }
-.navbar { display:flex; align-items:center; padding:20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); background:var(--surface); position:sticky; top:0; z-index:10; }
+.navbar { display:flex; align-items:center; padding:20rpx var(--nav-safe-right) 20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); background:var(--surface); position:sticky; top:0; z-index:10; }
 .nav-back { font-size:30rpx; color:var(--brand); white-space:nowrap; flex-shrink:0; padding-right:20rpx; }
 .nav-title { flex:1; text-align:center; font-size:32rpx; font-weight:600; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding:0 12rpx; }
 .body { padding-bottom:40rpx; }

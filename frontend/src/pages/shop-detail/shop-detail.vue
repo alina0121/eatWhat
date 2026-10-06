@@ -45,7 +45,7 @@ export default {
 
 <style lang="scss" scoped>
 .page { min-height:100vh; background:var(--bg); }
-.navbar { display:flex; align-items:center; padding:20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); background:var(--surface); position:sticky; top:0; z-index:10; }
+.navbar { display:flex; align-items:center; padding:20rpx var(--nav-safe-right) 20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); background:var(--surface); position:sticky; top:0; z-index:10; }
 .nav-back { font-size:30rpx; color:var(--brand); white-space:nowrap; flex-shrink:0; padding-right:20rpx; }
 .nav-title { flex:1; text-align:center; font-size:32rpx; font-weight:600; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding:0 12rpx; }
 .body { padding-bottom:40rpx; }
