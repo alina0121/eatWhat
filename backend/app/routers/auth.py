@@ -244,3 +244,240 @@ def get_me(uid: int = Depends(get_current_user), conn=Depends(get_conn)):
 
 # 导出 get_current_user 给其他路由用
 __all__ = ["get_current_user", "router"]
+
+# ===========================================================================
+# 邮箱验证码登录 / 绑定 / 注销
+# ===========================================================================
+import re as _re
+import sys as _sys
+_sys.path.insert(0, str(_sys.path[0]))
+from ..email import generate_otp, send_otp_email, is_smtp_configured
+
+_EMAIL_RE = _re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$')
+
+
+def _validate_email(email: str) -> bool:
+    return bool(email and _EMAIL_RE.match(email.strip()))
+
+
+def _consume_otp(conn, email: str, code: str, purpose: str) -> bool:
+    """校验验证码 + 标记已用。正确返回 True，否则 False。"""
+    row = conn.execute(
+        "SELECT * FROM email_otps WHERE email=? AND purpose=? AND code=? AND used=0 AND expired_at>?",
+        (email, purpose, code, int(time.time())),
+    ).fetchone()
+    if not row:
+        return False
+    conn.execute("UPDATE email_otps SET used=1 WHERE id=?", (row["id"],))
+    return True
+
+
+# ---------------------------------------------------------------------------
+# 1. 发验证码
+# ---------------------------------------------------------------------------
+class SendOtpBody(BaseModel):
+    email: str
+    purpose: str = "login"   # login | bind | reset
+
+
+class SendOtpOut(BaseModel):
+    ok: bool
+    hint: str
+
+
+@router.post("/send-email-code", response_model=SendOtpOut)
+def send_email_code(body: SendOtpBody, conn=Depends(get_conn)):
+    email = body.email.strip().lower()
+    purpose = body.purpose if body.purpose in ("login", "bind", "reset") else "login"
+
+    if not _validate_email(email):
+        raise HTTPException(400, "邮箱格式不正确")
+
+    # 频控：同邮箱 60 秒内只能发一次
+    last = conn.execute(
+        "SELECT created_at FROM email_otps WHERE email=? ORDER BY id DESC LIMIT 1",
+        (email,),
+    ).fetchone()
+    if last and int(time.time()) - last["created_at"] < 60:
+        raise HTTPException(429, "发验证码太频繁，请 60 秒后再试")
+
+    # 绑定场景：邮箱必须未被其他用户占用
+    if purpose == "bind":
+        existing = conn.execute(
+            "SELECT id FROM users WHERE email=? AND email!=''", (email,)
+        ).fetchone()
+        if existing:
+            raise HTTPException(409, "该邮箱已被其他账号绑定")
+
+    # 登录场景：邮箱被绑 → 正常发；没被绑 → 也能发（自动注册）
+    code = generate_otp()
+    expire_min = int(
+        conn.execute("SELECT value FROM configs WHERE key='otp_expire_min'").fetchone()[0]
+        or 10
+    )
+    now = int(time.time())
+    conn.execute(
+        "INSERT INTO email_otps(email, code, purpose, expired_at, used, created_at) "
+        "VALUES(?,?,?,?,0,?)",
+        (email, code, purpose, now + expire_min * 60, now),
+    )
+    conn.commit()
+
+    send_otp_email(conn, email, code, purpose)
+
+    smtp_ok = is_smtp_configured(conn)
+    hint = "验证码已发送" if smtp_ok else "验证码已生成（SMTP 未配置，见后端日志）"
+    return SendOtpOut(ok=True, hint=hint)
+
+
+# ---------------------------------------------------------------------------
+# 2. 邮箱验证码登录 / 自动注册
+# ---------------------------------------------------------------------------
+class EmailLoginBody(BaseModel):
+    email: str
+    code: str
+    nickname: Optional[str] = None
+
+
+@router.post("/login-email", response_model=LoginOut)
+def login_email(body: EmailLoginBody, conn=Depends(get_conn)):
+    email = body.email.strip().lower()
+    if not _validate_email(email):
+        raise HTTPException(400, "邮箱格式不正确")
+    if not body.code or len(body.code) != 6:
+        raise HTTPException(400, "请输入 6 位验证码")
+
+    if not _consume_otp(conn, email, body.code, "login"):
+        raise HTTPException(400, "验证码错误或已过期")
+
+    # 找/建用户
+    now = int(time.time())
+    row = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+    is_new = False
+    if row:
+        uid = row["id"]
+        nickname = body.nickname or row["nickname"] or f"吃货{uid}"
+        conn.execute(
+            "UPDATE users SET nickname=?, last_seen=? WHERE id=?", (nickname, now, uid)
+        )
+    else:
+        # 新用户：openid 用 "email_" + 哈希，和微信用户区分开
+        import hashlib
+        fake_openid = "email_" + hashlib.md5(email.encode()).hexdigest()[:24]
+        nickname = body.nickname or f"吃货{conn.execute('SELECT COUNT(*) FROM users').fetchone()[0] + 1}"
+        cur = conn.execute(
+            "INSERT INTO users(name, openid, email, nickname, role, created_at, last_seen) "
+            "VALUES('',?,?,?, 'user', ?, ?)",
+            (fake_openid, email, nickname, now, now),
+        )
+        uid = cur.lastrowid
+        is_new = True
+    conn.commit()
+    token = sign_token(conn, uid)
+    return LoginOut(
+        user_id=uid, nickname=nickname, avatar="", token=token, is_new=is_new
+    )
+
+
+# ---------------------------------------------------------------------------
+# 3. 绑定邮箱
+# ---------------------------------------------------------------------------
+class BindEmailBody(BaseModel):
+    email: str
+    code: str
+
+
+@router.post("/bind-email")
+def bind_email(body: BindEmailBody, uid: int = Depends(get_current_user), conn=Depends(get_conn)):
+    email = body.email.strip().lower()
+    if not _validate_email(email):
+        raise HTTPException(400, "邮箱格式不正确")
+
+    # 检查是否已绑定其他邮箱
+    cur = conn.execute("SELECT email FROM users WHERE id=?", (uid,)).fetchone()
+    if cur and cur["email"]:
+        raise HTTPException(400, f"当前账号已绑定 {cur['email']}，请先解绑")
+
+    # 检查邮箱是否被别人用了
+    dup = conn.execute(
+        "SELECT id FROM users WHERE email=? AND id!=? AND email!=''", (email, uid)
+    ).fetchone()
+    if dup:
+        raise HTTPException(409, "该邮箱已被其他账号绑定")
+
+    # 验证验证码（purpose=bind）
+    if not _consume_otp(conn, email, body.code, "bind"):
+        raise HTTPException(400, "验证码错误或已过期")
+
+    conn.execute("UPDATE users SET email=? WHERE id=?", (email, uid))
+    conn.commit()
+    row = conn.execute("SELECT id, email FROM users WHERE id=?", (uid,)).fetchone()
+    return {"ok": True, "email": row["email"]}
+
+
+# ---------------------------------------------------------------------------
+# 4. 解绑邮箱
+# ---------------------------------------------------------------------------
+@router.post("/unbind-email")
+def unbind_email(uid: int = Depends(get_current_user), conn=Depends(get_conn)):
+    cur = conn.execute("SELECT email FROM users WHERE id=?", (uid,)).fetchone()
+    if not cur or not cur["email"]:
+        raise HTTPException(400, "当前账号未绑定邮箱")
+    conn.execute("UPDATE users SET email='' WHERE id=?", (uid,))
+    conn.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# 5. 注销账户（物理删除用户所有数据 + 自身）
+# ---------------------------------------------------------------------------
+# 所有带 user_id 的表，注销时级联清理
+_CASCADE_TABLES = [
+    "recipes", "fridge_stock", "fridge_purchase",
+    "categories", "ingredients", "taste_tags",
+    "diners", "records", "weights", "tips",
+    "candidates",
+]
+
+
+@router.delete("/me")
+def delete_my_account(uid: int = Depends(get_current_user), conn=Depends(get_conn)):
+    """
+    注销账户：物理删除该用户所有数据 + users 表记录。
+    前端必须弹两次确认（文字输入「确认注销」或双弹 confirm），这里不做校验，
+    前端拦好再调。
+    """
+    # 不能删管理员（防止误操作把管理端搞挂）
+    user = conn.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()
+    if user and user["role"] == "admin":
+        raise HTTPException(403, "管理员账户不支持自助注销")
+
+    # 1. 级联删除所有业务表数据
+    deleted_counts = {}
+    for table in _CASCADE_TABLES:
+        try:
+            cur = conn.execute(f"DELETE FROM {table} WHERE user_id=?", (uid,))
+            if cur.rowcount:
+                deleted_counts[table] = cur.rowcount
+        except Exception:
+            # 表不存在或没 user_id 列 → 跳过
+            pass
+
+    # 2. 删除候选关联（candidates 也有 user_id）
+    try:
+        cur = conn.execute("DELETE FROM candidates WHERE user_id=?", (uid,))
+        if cur.rowcount:
+            deleted_counts["candidates"] = cur.rowcount
+    except Exception:
+        pass
+
+    # 3. 删 users 记录
+    conn.execute("DELETE FROM users WHERE id=?", (uid,))
+    conn.commit()
+
+    # 4. 清本地 token（前端会在收到 200 后自动清）
+    return {"ok": True, "deleted": deleted_counts, "user_id": uid}
+
+
+# 更新 __all__ 导出
+__all__ = ["get_current_user", "get_optional_user", "router"]

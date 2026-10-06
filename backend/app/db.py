@@ -24,12 +24,25 @@ CREATE TABLE IF NOT EXISTS users(
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     openid      TEXT UNIQUE,                              -- 微信 openid（唯一）
     unionid     TEXT NOT NULL DEFAULT '',                 -- 微信 unionid（同主体多 app 共享）
+    email       TEXT NOT NULL DEFAULT '',                 -- 绑定邮箱（唯一，空串=未绑定）
     nickname    TEXT NOT NULL DEFAULT '',                 -- 昵称（新版 chooseAvatar + nickname input）
     avatar      TEXT NOT NULL DEFAULT '',                 -- 头像 URL（临时链接，微信返回的）
     role        TEXT NOT NULL DEFAULT 'user',             -- user | admin
     created_at  INTEGER NOT NULL DEFAULT 0,               -- 注册时间戳
     last_seen   INTEGER NOT NULL DEFAULT 0                -- 最近活跃时间戳
 );
+
+-- 邮箱验证码（临时表，发码/校验用，用后标记 used=1，过期自动忽略）
+CREATE TABLE IF NOT EXISTS email_otps(
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    email      TEXT NOT NULL,
+    code       TEXT NOT NULL,                              -- 6 位数字
+    purpose    TEXT NOT NULL DEFAULT 'login',              -- login | bind | reset
+    expired_at INTEGER NOT NULL,                           -- 时间戳（秒）
+    used       INTEGER NOT NULL DEFAULT 0,                 -- 0 未用 / 1 已用
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_otp_email ON email_otps(email);
 
 -- 配置表：环境参数统一走这里，避免散落代码
 CREATE TABLE IF NOT EXISTS configs(
@@ -207,15 +220,16 @@ def init_db() -> None:
         # users 表迁移：老表只有 id/name/role，补上微信登录所需列
         _ucols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
         for _col, _typ, _def in [
-            ("openid", "TEXT", "''"),
+            ("openid", "TEXT", ""),
             ("unionid", "TEXT NOT NULL DEFAULT ''", ""),
+            ("email", "TEXT NOT NULL DEFAULT ''", ""),
             ("nickname", "TEXT NOT NULL DEFAULT ''", ""),
             ("avatar", "TEXT NOT NULL DEFAULT ''", ""),
             ("created_at", "INTEGER NOT NULL DEFAULT 0", ""),
             ("last_seen", "INTEGER NOT NULL DEFAULT 0", ""),
         ]:
             if _col not in _ucols:
-                conn.execute(f"ALTER TABLE users ADD COLUMN {_typ}")
+                conn.execute(f"ALTER TABLE users ADD COLUMN {_col} {_typ}")
         # 老数据 name → nickname（有则迁过去）
         if "name" in _ucols and "nickname" in _ucols:
             conn.execute("UPDATE users SET nickname = name WHERE nickname='' AND name IS NOT NULL")
@@ -247,6 +261,16 @@ def init_db() -> None:
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('wx_sec_enabled','0')")
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('mp_appid','')")
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('mp_secret','')")
+        # JWT 签名密钥（务必改！默认值仅开发期占位）
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('jwt_secret','eatwhat-change-me-1234567890')")
+        # SMTP 邮箱服务（管理员维护，QQ/163 邮箱都支持，端口 465 SSL / 587 TLS）
+        # 没配 → 发验证码降级为后端日志打印，开发期可用
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('smtp_host','')")
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('smtp_port','465')")
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('smtp_user','')")
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('smtp_pass','')")
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('smtp_from','吃啥好呀')")
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('otp_expire_min','10')")
         # 默认管理员
         conn.execute("INSERT OR IGNORE INTO users(id,name,role) VALUES(1,'管理员','admin')")
         # 食材大类默认种子：仅当表为空时写入（避免把用户删除/改名的大类复活）
