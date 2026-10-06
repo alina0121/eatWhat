@@ -82,9 +82,12 @@
           <view class="mrow" @tap="nav('/pages/mine-data/mine-data')">
             <text class="ic">📊</text><view class="m1"><text class="mt">我的数据</text><text class="ms">计数 · 本月干饭 · 体重趋势</text></view><text class="ar">›</text>
           </view>
+          <!-- #ifdef H5 -->
+          <!-- 管理端页面仅 H5 存在（见 pages.json 条件编译），故入口也只在 H5 渲染 -->
           <view class="mrow" v-if="isPc" @tap="nav('/pages/admin/admin')">
             <text class="ic">🖥️</text><view class="m1"><text class="mt">管理端（PC）</text><text class="ms">审核 · 图库 · 食材 · 餐厅 · 配置</text></view><text class="ar">›</text>
           </view>
+          <!-- #endif -->
         </view>
       </view>
 

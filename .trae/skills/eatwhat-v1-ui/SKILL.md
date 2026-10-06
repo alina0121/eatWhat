@@ -205,10 +205,23 @@ description: "吃啥应用的「第一版UI」设计基准：页面结构、底�
 | 不支持的单位 | `100dvh` 等用 `/* #ifdef H5 */ ... /* #endif */` 包裹 | 小程序不支持该单位，H5 需要 |
 | 窗口尺寸 | 用 `uni.getWindowInfo()` / `uni.getSystemInfoSync()` | 小程序无 `window` 对象，`window.innerWidth` 会报错 |
 | DOM/BOM | `window` / `document` / `localStorage` 一律换 `uni.*` 对应 API | 小程序无 DOM/BOM；`uni.getStorageSync` / `uni.request` / `uni.showModal` / `uni.createSelectorQuery` 才跨端安全 |
+| 页面级条件编译 | `pages.json` 支持 `// #ifndef MP-WEIXIN` 包裹页面条目；该页面的跳转入口同步用 `<!-- #ifdef H5 -->` 包裹 | 页面被剔除后跳转入口若仍存在，会 `navigateTo` 到不存在的页面 |
+| PC 管理端归属 | 管理端页**仅 H5 部署**，小程序包内不含（条件编译剔除） | 管理端是 px 布局 + `windowWidth>=1024` 判定，手机上永不触发；其为最大单页，剔除可显著减小主包 |
 
 真机仍需留意的两点（未做兼容降级）：
 1. `display: grid` 使用面很广（emoji 候选、日历、KPI 卡等）——现代基础库支持，安卓低版本 WebView 个别机型有偏差。
 2. flex `gap` 用得多——iOS 14 以下不支持 flex gap，会退化为无间距。
+
+### 4.7 UGC 内容安全（小程序提审硬要求）
+小程序内有用户生成内容时，微信提审**强制要求**接入内容安全检测，否则大概率被驳回。
+
+- 实现位置：`backend/app/wxsec.py`（msgSecCheck v2）。用标准库 `urllib`，**不新增 HTTP 依赖**。
+- 配置项（`configs` 表，管理端/接口可改）：`wx_sec_enabled` 默认 `'0'`、`mp_appid`、`mp_secret`。
+- 接入点：厨房技巧的新增/编辑（标题+正文合并送检）、干饭成员的新增/编辑（成员名）。
+- **默认关闭**，本地 / H5 开发与既有流程完全不受影响；配好凭证后置 `'1'` 即生效。
+- **fail-open 四条**：开关关闭 / 未配凭证 / 微信接口超时或报错 / 无 openid —— 一律放行，避免"检测故障导致用户存不了内容"。
+- `suggest` 判定：`risky` 直接拦截；`review` 放行并交由本项目既有的「人工审核」流程兜底（技巧本身就要过审），避免误伤。
+- ⚠️ **真正强制生效还需 openid**：msgSecCheck v2 要求 openid，而 openid 需先接 `wx.login` 换 code 的登录流程（项目当前未接）。所以未接登录前本检测不会拦截，接上登录后自动生效，调用方无需再改。
 
 ## 5. 落地开发前置校验
 在实现任何页面或逻辑前，先对照本基准确认：

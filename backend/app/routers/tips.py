@@ -17,6 +17,7 @@ from sqlite3 import Connection
 
 from app.db import get_db, row_to_dict
 from app.routers.configs import get_config
+from app.wxsec import check_text
 
 router = APIRouter(prefix="/tips", tags=["tips"])
 
@@ -82,7 +83,11 @@ def list_tips(
 
 @router.post("")
 def create_tip(body: TipIn, conn: Connection = Depends(get_db)):
-    """新增技巧 → 进入待审核（或直接通过，视开关）。"""
+    """新增技巧：先过微信内容安全检测（启用时），再进入待审核（或直接通过，视开关）。"""
+    # 标题也可能是违规内容，与正文合并送检
+    ok, reason = check_text(conn, f"{body.title}\n{body.content}")
+    if not ok:
+        raise HTTPException(400, reason)
     status = _initial_status(conn)
     cur = conn.execute(
         "INSERT INTO tips(title,content,cat,author,pub,status) VALUES(?,?,?,?,?,?)",
@@ -97,6 +102,9 @@ def update_tip(tid: int, body: TipIn, conn: Connection = Depends(get_db)):
     tip = _get(conn, tid)
     if tip["author"] != body.author:
         raise HTTPException(403, "只能修改自己创建的技巧")
+    ok, reason = check_text(conn, f"{body.title}\n{body.content}")
+    if not ok:
+        raise HTTPException(400, reason)
     status = _initial_status(conn)
     conn.execute(
         "UPDATE tips SET title=?,content=?,cat=?,pub=?,status=?,updated_at=datetime('now','localtime') "

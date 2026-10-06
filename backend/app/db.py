@@ -212,6 +212,11 @@ def init_db() -> None:
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('recipe_emoji_pool','🍽,🍲,🍜,🍕,🍔,🍟,🥗,🥘,🍛,🍣,🍱,🥙,🌮,🍤,🍢,🥟,🍙,🍝,🥗,🍳')")
         # 餐厅图标池：餐厅收藏 emoji 候选（逗号分隔），管理端维护
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('shop_icon_pool','🏪,🍜,🍲,🍣,🏮,🥟,🍢,🌮,🍕,🥘,🍱,🍛,🍗,🥙,🏠,🏢,🏖️,🏔️')")
+        # 微信内容安全检测：小程序提审要求 UGC 必须送检（见 app/wxsec.py）
+        # 默认关闭 → 配好 mp_appid/mp_secret 后把 wx_sec_enabled 置 1 生效，本地/H5 不受影响
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('wx_sec_enabled','0')")
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('mp_appid','')")
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('mp_secret','')")
         # 默认管理员
         conn.execute("INSERT OR IGNORE INTO users(id,name,role) VALUES(1,'管理员','admin')")
         # 食材大类默认种子：仅当表为空时写入（避免把用户删除/改名的大类复活）

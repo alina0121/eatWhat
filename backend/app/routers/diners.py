@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlite3 import Connection
 
 from app.db import get_db, jdump, row_to_dict
+from app.wxsec import check_text
 
 router = APIRouter(prefix="/diners", tags=["diners"])
 
@@ -37,6 +38,10 @@ def list_diners(conn: Connection = Depends(get_db)):
 
 @router.post("")
 def create_diner(body: DinerIn, conn: Connection = Depends(get_db)):
+    # 成员名是用户输入文本，一并送内容安全检测（启用时）
+    ok, reason = check_text(conn, body.name)
+    if not ok:
+        raise HTTPException(400, reason)
     cur = conn.execute(
         "INSERT INTO diners(name,tags) VALUES(?,?)",
         (body.name, jdump(body.tags)),
@@ -52,6 +57,9 @@ def get_diner(did: int, conn: Connection = Depends(get_db)):
 @router.put("/{did}")
 def update_diner(did: int, body: DinerIn, conn: Connection = Depends(get_db)):
     _get(conn, did)
+    ok, reason = check_text(conn, body.name)
+    if not ok:
+        raise HTTPException(400, reason)
     conn.execute(
         "UPDATE diners SET name=?, tags=? WHERE id=?",
         (body.name, jdump(body.tags), did),

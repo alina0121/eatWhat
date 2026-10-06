@@ -75,10 +75,13 @@
       "path": "pages/mine-tastes/mine-tastes",
       "style": { "navigationBarTitleText": "口味标签", "navigationStyle": "custom" }
     },
+    // #ifndef MP-WEIXIN
+    // PC 管理端仅在 H5 部署（px 布局 + 宽屏判定），小程序端用不到，条件编译剔除以缩小主包体积
     {
       "path": "pages/admin/admin",
       "style": { "navigationBarTitleText": "PC 管理端", "navigationStyle": "custom" }
     },
+    // #endif
     {
       "path": "pages/mine-data/mine-data",
       "style": { "navigationBarTitleText": "我的数据", "navigationStyle": "custom" }
