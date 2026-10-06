@@ -19,11 +19,16 @@ DB_PATH = Path(__file__).resolve().parent.parent / "eatwhat.db"
 # Schema（DDL）：建表 + 配置种子 + 默认管理员
 # ---------------------------------------------------------------------------
 SCHEMA = """
--- 用户（MVP 仅做最简，后续可接真实登录）
+-- 用户（微信登录 + JWT 鉴权，后端用 openid 唯一标识）
 CREATE TABLE IF NOT EXISTS users(
-    id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    name    TEXT NOT NULL,
-    role    TEXT NOT NULL DEFAULT 'user'   -- user | admin
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    openid      TEXT UNIQUE,                              -- 微信 openid（唯一）
+    unionid     TEXT NOT NULL DEFAULT '',                 -- 微信 unionid（同主体多 app 共享）
+    nickname    TEXT NOT NULL DEFAULT '',                 -- 昵称（新版 chooseAvatar + nickname input）
+    avatar      TEXT NOT NULL DEFAULT '',                 -- 头像 URL（临时链接，微信返回的）
+    role        TEXT NOT NULL DEFAULT 'user',             -- user | admin
+    created_at  INTEGER NOT NULL DEFAULT 0,               -- 注册时间戳
+    last_seen   INTEGER NOT NULL DEFAULT 0                -- 最近活跃时间戳
 );
 
 -- 配置表：环境参数统一走这里，避免散落代码
@@ -199,6 +204,31 @@ def init_db() -> None:
         _scols = {r[1] for r in conn.execute("PRAGMA table_info(shops)").fetchall()}
         if "icon" not in _scols:
             conn.execute("ALTER TABLE shops ADD COLUMN icon TEXT NOT NULL DEFAULT '🏪'")
+        # users 表迁移：老表只有 id/name/role，补上微信登录所需列
+        _ucols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+        for _col, _typ, _def in [
+            ("openid", "TEXT", "''"),
+            ("unionid", "TEXT NOT NULL DEFAULT ''", ""),
+            ("nickname", "TEXT NOT NULL DEFAULT ''", ""),
+            ("avatar", "TEXT NOT NULL DEFAULT ''", ""),
+            ("created_at", "INTEGER NOT NULL DEFAULT 0", ""),
+            ("last_seen", "INTEGER NOT NULL DEFAULT 0", ""),
+        ]:
+            if _col not in _ucols:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {_typ}")
+        # 老数据 name → nickname（有则迁过去）
+        if "name" in _ucols and "nickname" in _ucols:
+            conn.execute("UPDATE users SET nickname = name WHERE nickname='' AND name IS NOT NULL")
+            conn.execute("UPDATE users SET name = '' WHERE name IS NOT NULL")
+        # 给老 id=1 的用户补个 mock openid（让现有数据继续可见）
+        row1 = conn.execute("SELECT id FROM users WHERE id=1").fetchone()
+        if not row1:
+            conn.execute(
+                "INSERT INTO users(id, openid, nickname, role, created_at, last_seen) "
+                "VALUES(1, 'dev_default', '我', 'user', 0, 0)"
+            )
+        elif not conn.execute("SELECT openid FROM users WHERE id=1").fetchone()[0]:
+            conn.execute("UPDATE users SET openid='dev_default' WHERE id=1")
         # 默认配置：审核开关（1 开 0 关）、临期阈值天数
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('audit_enabled','1')")
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('expiry_threshold_days','3')")

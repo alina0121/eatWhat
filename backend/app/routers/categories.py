@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 食材大类路由：双层模型——公共（scope=public）+ 用户私有补录（scope=user）。
 
@@ -14,6 +14,7 @@ from sqlite3 import Connection
 from typing import Optional
 
 from app.db import get_db, row_to_dict
+from .auth import get_optional_user
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -48,7 +49,7 @@ def _merge_rows(conn: Connection, user_id: int) -> list:
 
 
 @router.get("")
-def list_categories(user: int = Query(1),
+def list_categories(user: int = Depends(get_optional_user),
                     public_only: bool = Query(False),
                     conn: Connection = Depends(get_db)):
     if public_only:
@@ -99,7 +100,7 @@ def _max_sort(conn: Connection, user_id: int) -> int:
 
 @router.post("")
 def create_category(body: CategoryIn,
-                    user: int = Query(1),
+                    user: int = Depends(get_optional_user),
                     public: bool = Query(False),
                     conn: Connection = Depends(get_db)):
     name = body.name.strip()
@@ -138,7 +139,7 @@ def _get_row(conn: Connection, cid: int, user_id: int, admin: bool) -> Optional[
 
 @router.put("/{cid}")
 def update_category(cid: int, body: CategoryIn,
-                    user: int = Query(1),
+                    user: int = Depends(get_optional_user),
                     admin: bool = Query(False),
                     conn: Connection = Depends(get_db)):
     row = _get_row(conn, cid, user, admin)
@@ -172,7 +173,7 @@ def update_category(cid: int, body: CategoryIn,
 
 @router.post("/{cid}/move")
 def move_category(cid: int, body: CategoryMove,
-                  user: int = Query(1),
+                  user: int = Depends(get_optional_user),
                   admin: bool = Query(False),
                   conn: Connection = Depends(get_db)):
     row = _get_row(conn, cid, user, admin)
@@ -197,7 +198,7 @@ def move_category(cid: int, body: CategoryMove,
 
 @router.delete("/{cid}")
 def delete_category(cid: int,
-                    user: int = Query(1),
+                    user: int = Depends(get_optional_user),
                     admin: bool = Query(False),
                     conn: Connection = Depends(get_db)):
     row = _get_row(conn, cid, user, admin)

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 候选收件箱「吃这些」路由（核心业务，含 COOK 一致性保证）。
 
@@ -15,11 +15,12 @@
 """
 import json
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlite3 import Connection
 
 from app.db import get_db, jdump, jload, row_to_dict
+from .auth import get_optional_user
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -113,7 +114,7 @@ def list_candidates(conn: Connection = Depends(get_db)):
 
 @router.post("")
 def add_candidate(body: CandidateIn,
-                  user: int = Query(1, description="当前用户，默认 1"),
+                  user: int = Depends(get_optional_user),
                   conn: Connection = Depends(get_db)):
     """加入候选。整个方法在一个事务里（get_db 提交/回滚）：
 
@@ -152,7 +153,7 @@ def add_candidate(body: CandidateIn,
 
 @router.delete("/{cid}")
 def remove_candidate(cid: int,
-                     user: int = Query(1, description="当前用户，默认 1"),
+                     user: int = Depends(get_optional_user),
                      conn: Connection = Depends(get_db)):
     """移除候选：回退**该用户**代入的待采购量（餐厅无代入则无影响），同事务保证一致。"""
     row = conn.execute("SELECT * FROM eat_inbox WHERE id=?", (cid,)).fetchone()

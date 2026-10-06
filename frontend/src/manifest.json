@@ -18,7 +18,7 @@
     }
   },
   "mp-weixin": {
-    "appid": "touristappid",
+    "appid": "wx8a9c9fdcd1af88d6",
     "setting": {
       "urlCheck": false,
       "es6": true,
