@@ -132,7 +132,11 @@ export default {
     // 管理员演示开关：本地标记（MVP）
     this.isAdmin = uni.getStorageSync('eat_admin') === '1'
     // PC 管理端入口：仅桌面宽屏可见（>=1024px），移动端不显示
-    try { this.isPc = (uni.getWindowInfo && uni.getWindowInfo().windowWidth) >= 1024 } catch (e) { this.isPc = window.innerWidth >= 1024 }
+    // 小程序/App 无 window 对象，统一走 uni 的窗口信息 API（各端均支持）
+    try {
+      const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
+      this.isPc = !!(info && info.windowWidth >= 1024)
+    } catch (e) { this.isPc = false }
     this.load()
   },
   methods: {

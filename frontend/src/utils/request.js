@@ -1,11 +1,21 @@
 // request.js —— 底层网络封装（基于 uni.request，一套代码跑 H5 / 小程序 / App）
 // 背端 FastAPI 已放开 CORS；小程序后续需配置合法域名（见 manifest / 部署说明）
 
-// 开发期用相对路径 + Vite dev server 代理（见 vite.config.js）：
-//   前端 /api/recipes → vite 代理重写为 /recipes → 后端 8000
-//   这样跨机器（如手机访问笔记本 IP）也能通——浏览器永远只连当前 origin
-// 生产构建时改为全路径（如 https://xxx.com/api）
+// 各端 BASE 取值不同，用 uni-app 条件编译区分：
+//  - H5：相对路径 '/api'，走 Vite dev server 代理（见 vite.config.js），
+//        浏览器只连当前 origin，天然无 CORS；生产构建由 Nginx 反代 /api 即可
+//  - 小程序 / App：uni.request 不支持相对路径，必须绝对地址，
+//        且小程序要求 HTTPS + 后台配置 request 合法域名（无代理层可用）
+// 部署时只需改 MP_BASE 一行：换成已备案的 HTTPS 域名
+const MP_BASE = 'https://api.example.com/api'
+
+// #ifdef H5
 const BASE = '/api'
+// #endif
+
+// #ifndef H5
+const BASE = MP_BASE
+// #endif
 
 function req(method, path, data) {
   return new Promise((resolve, reject) => {

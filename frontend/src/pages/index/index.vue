@@ -262,10 +262,13 @@ export default {
 .sec-tit { font-size:32rpx; font-weight:700; margin:20rpx 0 16rpx; }
 .link { color:var(--brand); font-size:26rpx; margin-left:8rpx; font-weight:400; }
 .sub-13 { font-size:22rpx; color:var(--text-2); font-weight:400; }
+/* 横滑行内层统一用 inline-flex / inline-grid：
+   块级 flex/grid 会被撑到容器宽度，小程序 scroll-view scroll-x 检查不到更宽的内容宽度，
+   只有行内级盒才会收缩到内容实际宽度、触发横向滚动 */
 .chip-scroll { white-space: nowrap; }
-.chip-row1 { display: flex; gap: 12rpx; padding-right: 8rpx; }
+.chip-row1 { display: inline-flex; vertical-align: top; gap: 12rpx; padding-right: 8rpx; }
 .chip-row1 .chip { white-space: nowrap; flex-shrink: 0; }
-.chiprow { display: grid; grid-template-rows: repeat(2, 56rpx); grid-auto-flow: column; grid-auto-columns: max-content; gap: 12rpx 10rpx; padding-right: 8rpx; }
+.chiprow { display: inline-grid; vertical-align: top; grid-template-rows: repeat(2, 56rpx); grid-auto-flow: column; grid-auto-columns: max-content; gap: 12rpx 10rpx; padding-right: 8rpx; }
 .chiprow .chip { white-space: nowrap; flex-shrink: 0; }
 
 /* —— 为您推荐 —— */

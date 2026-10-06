@@ -293,7 +293,8 @@ export default {
 .chip.on { background:var(--brand); border-color:var(--brand); color:#fff; }
 /* 大类两行横滑（与 mine-ingredients / 首页推荐统一） */
 .f-cat-scroll { white-space: nowrap; }
-.f-cat-grid { display: grid; grid-template-rows: repeat(2, max-content); grid-auto-flow: column; grid-auto-columns: max-content; gap: 12rpx 10rpx; padding: 4rpx 8rpx 0; }
+/* inline-grid：让 grid 收缩到内容宽度（超出容器才有可滚动宽度），小程序 scroll-view scroll-x 才认 */
+.f-cat-grid { display: inline-grid; vertical-align: top; grid-template-rows: repeat(2, max-content); grid-auto-flow: column; grid-auto-columns: max-content; gap: 12rpx 10rpx; padding: 4rpx 8rpx 0; }
 .f-cat-grid .chip { padding: 10rpx 20rpx; border: 1rpx solid var(--border); border-radius: 999rpx; background: var(--bg); color: var(--text-2); }
 .f-cat-grid .chip.on { background: var(--brand); color: #fff; border-color: var(--brand); }
 .segs { display:flex; gap:10rpx; }

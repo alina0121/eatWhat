@@ -166,10 +166,12 @@ description: "吃啥应用的「第一版UI」设计基准：页面结构、底�
 
 ### 4.2 两行横滑 grid 统一设计
 所有两行横滑（食材库归类大类、冰箱编辑大类、首页推荐筛一下）统一：
-- 外层 `<scroll-view scroll-x>` + 内层 `grid`
+- 外层 `<scroll-view scroll-x>`（配合 `white-space: nowrap`）+ 内层 **`display: inline-grid`**
 - `grid-template-rows: repeat(2, max-content)` 锁死两行
 - `grid-auto-flow: column` + `grid-auto-columns: max-content` 按列填充
-- `white-space: nowrap` 防 chip 文字折行
+- `vertical-align: top` 消除行内盒的基线留白
+- 单行横滑同理，内层用 **`display: inline-flex`**
+- ⚠️ 内层不可用块级 `flex`/`grid`：块级盒会被撑到容器宽度，小程序 `scroll-view scroll-x` 检查不到更宽的内容宽度 → 滚不动（H5 靠溢出区机制照常能滚，极易漏测）。详见 4.6
 
 ### 4.3 日期控件统一
 所有表单日期输入统一用 `<picker mode="date">`，不在 `<input>` 里手动手输日期字符串。
@@ -179,6 +181,7 @@ description: "吃啥应用的「第一版UI」设计基准：页面结构、底�
 - `--brand` 紫 `#4b3fe3` / `--surface` / `--card` / `--bg` / `--border`
 - `--text` / `--text-2` / `--danger` / `--warning` / `--success`
 - `--radius-lg` 大卡片圆角（默认 16rpx）
+- ⚠️ **必须定义在 `App.vue` 的全局 style 里**，不可放 `uni.scss`（原因见 4.6）
 
 ### 4.5 其他
 - 简洁扁平风格，状态 emoji / pill 辅助。
@@ -187,11 +190,32 @@ description: "吃啥应用的「第一版UI」设计基准：页面结构、底�
 - 管理端布局用 **px**（非 rpx），避免桌面端 rpx 放大。
 - `Vite proxy`：前端用相对路径 `/api`，vite 转发到后端；`vite.config.js` 设 `host: true` 同时监听 IPv4/IPv6。
 
+### 4.6 跨端（微信小程序 / App / H5）兼容基线
+一套代码多端编译，以下为已验证的跨端硬约束（违反会在小程序端静默失效，H5 不一定暴露）：
+
+| 项 | 约束 | 原因 |
+|---|---|---|
+| 编译依赖 | 必须安装 `@dcloudio/uni-mp-weixin`，版本与其它 `@dcloudio/*` 完全一致 | 缺失则 `build:mp-weixin` 直接报错退出 |
+| 接口 BASE | H5 用相对路径 `'/api'`（走 vite 代理）；小程序/App 必须绝对 HTTPS 地址 | 小程序 `uni.request` 不支持相对路径，且无代理层 |
+| 承载位置 | 统一在 `request.js` 顶部 `const MP_BASE = '...'` 常量承接，用 `// #ifdef H5` / `// #ifndef H5` 条件编译区分 | 部署时只改一行 |
+| 全局 CSS 变量 | 定义在 **App.vue 全局 style**；`uni.scss` 只放 SCSS 变量（`$brand` 等），不放任何 CSS 规则 | `uni.scss` 会被注入到每个组件的 `<style lang="scss">`，带 scoped 的页面会编译成 `page[data-v-xxx]`，小程序下 `page` 元素没有 `data-v` 属性 → 变量整段失效、颜色全丢 |
+| 横滑容器 | 内层用行内级盒 `inline-flex` / `inline-grid` | 块级盒会被撑到容器宽度，小程序测不到更宽内容 → 滚不动 |
+| 图表 | **不可用内联 `<svg>`**；改用绝对定位 view 绘制（线段 = 起点 + 长度 + 旋转角） | 小程序 WXML 不支持内联 SVG 标签 |
+| 图表容器 | 必须**固定 rpx 尺寸**（如 `640rpx × 300rpx`） | 保证宽高比恒定，`rotate` 角度才与渲染一致；rpx→px 等比缩放，固定 rpx 在任意屏幕都等比成立 |
+| 不支持的单位 | `100dvh` 等用 `/* #ifdef H5 */ ... /* #endif */` 包裹 | 小程序不支持该单位，H5 需要 |
+| 窗口尺寸 | 用 `uni.getWindowInfo()` / `uni.getSystemInfoSync()` | 小程序无 `window` 对象，`window.innerWidth` 会报错 |
+| DOM/BOM | `window` / `document` / `localStorage` 一律换 `uni.*` 对应 API | 小程序无 DOM/BOM；`uni.getStorageSync` / `uni.request` / `uni.showModal` / `uni.createSelectorQuery` 才跨端安全 |
+
+真机仍需留意的两点（未做兼容降级）：
+1. `display: grid` 使用面很广（emoji 候选、日历、KPI 卡等）——现代基础库支持，安卓低版本 WebView 个别机型有偏差。
+2. flex `gap` 用得多——iOS 14 以下不支持 flex gap，会退化为无间距。
+
 ## 5. 落地开发前置校验
 在实现任何页面或逻辑前，先对照本基准确认：
 - 是否用到底部五 tab / 对应页面归属；
 - 是否涉及候选 → 采购代入/回退、计时、用餐人口味联动、审核等既有交互；
 - emoji 候选网格是否统一用 4列 × 两行半 + 点选；
-- 两行横滑是否统一用 grid + scroll-view 组合；
+- 两行横滑是否统一用 `inline-grid` + `scroll-view scroll-x`；
 - 日期控件是否用 picker mode=date，不用手输；
-- 复用既有 CSS 变量与组件。
+- 复用既有 CSS 变量与组件；
+- 是否触碰 4.6 的跨端硬约束（尤其：CSS 变量位置、横滑内层 display、是否用了 `<svg>`）。

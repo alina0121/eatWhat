@@ -230,7 +230,8 @@ export default {
 .icell { height:76rpx; display:flex; align-items:center; justify-content:center; font-size:40rpx; background:var(--bg); border-radius:12rpx; border:2rpx solid transparent; }
 .icell.on { border-color:var(--brand); background:#efeaff; }
 .cat-scroll-x { height: 124rpx; white-space: nowrap; }
-.cat-wrap { display: grid; grid-template-rows: repeat(2, 56rpx); grid-auto-flow: column; grid-auto-columns: max-content; gap: 12rpx 10rpx; padding-right: 8rpx; }
+/* inline-grid：收缩到内容宽度，小程序 scroll-view scroll-x 才认可滚动区 */
+.cat-wrap { display: inline-grid; vertical-align: top; grid-template-rows: repeat(2, 56rpx); grid-auto-flow: column; grid-auto-columns: max-content; gap: 12rpx 10rpx; padding-right: 8rpx; }
 .chip { font-size:24rpx; color:var(--text-2); background:var(--bg); border:1rpx solid var(--border); border-radius:999rpx; padding:10rpx 20rpx; white-space:nowrap; }
 .chip.on { background:var(--brand); color:#fff; border-color:var(--brand); }
 </style>

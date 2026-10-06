@@ -43,7 +43,7 @@
         </view>
       </view>
 
-      <!-- 曲线图 -->
+      <!-- 曲线图：小程序 WXML 不支持内联 <svg>，故改用绝对定位的 view 绘制 -->
       <view class="section">
         <view class="card">
           <view class="legend">
@@ -51,19 +51,27 @@
             <text class="lg"><text class="dot f"></text>体脂(%)</text>
           </view>
           <view class="cmeta">近 {{ weights.length || 0 }} 条记录趋势</view>
-          <svg :viewBox="`0 0 ${W} ${H}`" class="chart">
+          <view class="chart">
             <!-- 横向辅助网格 -->
-            <line v-for="gy in gridY" :key="gy" :x1="pad" :y1="gy" :x2="W - pad" :y2="gy" stroke="#eee" stroke-width="1"/>
-            <!-- 折线 -->
-            <path v-for="s in charts" :key="s.key" :d="s.path" fill="none" :stroke="s.color" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <view v-for="gy in gridY" :key="'g'+gy" class="gridline" :style="{ top: gy + 'rpx' }"></view>
+            <!-- 折线：每条线段 = 起点 + 长度 + 旋转角，拼出连续折线 -->
+            <view
+              v-for="s in chartSegs"
+              :key="s.k"
+              class="seg"
+              :style="{ left: s.x + 'rpx', top: s.y + 'rpx', width: s.len + 'rpx', background: s.color, transform: 'rotate(' + s.deg + 'deg)' }"
+            ></view>
             <!-- 数据点 -->
-            <g v-for="p in sPoints" :key="'g'+p.key">
-              <circle v-for="pt in p.pts" :key="'p'+pt.i" :cx="pt.x" :cy="pt.y" r="3.5" :fill="p.color" stroke="#fff" stroke-width="1.5"/>
-            </g>
+            <view
+              v-for="p in chartDots"
+              :key="p.k"
+              class="pt"
+              :style="{ left: p.x + 'rpx', top: p.y + 'rpx', background: p.color }"
+            ></view>
             <!-- X 轴日期(首/末) -->
-            <text v-if="weights.length" :x="pad" :y="H-4" font-size="9" fill="#999">{{ weights[0].date }}</text>
-            <text v-if="weights.length" :x="W-pad" :y="H-4" font-size="9" fill="#999" text-anchor="end">{{ weights[weights.length-1].date }}</text>
-          </svg>
+            <text v-if="weights.length" class="xlab l">{{ weights[0].date }}</text>
+            <text v-if="weights.length" class="xlab r">{{ weights[weights.length - 1].date }}</text>
+          </view>
           <view v-if="!weights.length" class="empty">还没有记录，点击右上角记一笔</view>
         </view>
       </view>
@@ -89,12 +97,15 @@
 <script>
 import { weightApi } from '@/api'
 
-// 归一化坐标：把一个数值序列映射到图的 [(pad,pad)~(W-pad,H-pad)] 区域
+// 归一化坐标：把一个数值序列映射到图的 [(pad,pad)~(W-pad,H-pad)] 区域（单位 rpx）
+// 无效值（如缺失的体脂记录）返回 null，供折线在断点处跳过连线
 function layout(vals, W, H, pad) {
-  if (!vals.length) return []
-  const min = Math.min(...vals), max = Math.max(...vals), span = (max - min) || 1
+  const nums = vals.filter((v) => Number.isFinite(v))
+  if (!nums.length) return []
+  const min = Math.min(...nums), max = Math.max(...nums), span = (max - min) || 1
   const n = vals.length
   return vals.map((v, i) => {
+    if (!Number.isFinite(v)) return null
     const x = pad + (n === 1 ? (W - pad) / 2 : (W - 2 * pad) * i / (n - 1))
     const y = pad + (1 - (v - min) / span) * (H - 2 * pad)
     return { x: +x.toFixed(1), y: +y.toFixed(1), i }
@@ -104,7 +115,8 @@ function layout(vals, W, H, pad) {
 export default {
   data() {
     return {
-      weights: [], W: 320, H: 150, pad: 26,
+      // W/H/pad 与 .chart 的 rpx 尺寸严格对应，保证旋转角不失真
+      weights: [], W: 640, H: 300, pad: 36,
       // 内联表单状态（新增/编辑复用；H5 下 uni.showModal(editable) 不支持，故用页内表单）
       showForm: false, editingId: null, f: { weight: '', fat: '', date: '' },
       series: [
@@ -114,23 +126,53 @@ export default {
     }
   },
   computed: {
-    charts() {
-      return this.series.map((s) => {
-        const pts = layout(this.weights.map(s.get), this.W, this.H, this.pad)
-        return {
-          ...s,
-          path: pts.map((p, i) => (i === 0 ? 'M' : 'L') + p.x + ' ' + p.y).join(' ')
+    // 各系列的归一化点（含 null 断点）
+    seriesPts() {
+      return this.series.map((s) => ({
+        key: s.key,
+        color: s.color,
+        pts: layout(this.weights.map(s.get), this.W, this.H, this.pad)
+      }))
+    },
+    // 折线段：仅相邻两个有效点之间连线（缺体脂处自然断开）
+    // 每条线用「起点 + 长度 + 旋转角」描述，模板里以绝对定位 + rotate 渲染；
+    // 角度在 rpx 坐标空间计算，因 rpx→px 是等比缩放，旋转角与渲染结果一致
+    chartSegs() {
+      const out = []
+      this.seriesPts.forEach((s) => {
+        for (let i = 1; i < s.pts.length; i++) {
+          const a = s.pts[i - 1], b = s.pts[i]
+          if (!a || !b) continue
+          const dx = b.x - a.x, dy = b.y - a.y
+          out.push({
+            k: s.key + '-' + i,
+            color: s.color,
+            x: a.x,
+            y: a.y,
+            len: +Math.sqrt(dx * dx + dy * dy).toFixed(1),
+            deg: +(Math.atan2(dy, dx) * 180 / Math.PI).toFixed(2)
+          })
         }
       })
+      return out
     },
-    // 数据点坐标（供所有系列圆点渲染）
-    sPoints() {
-      return this.charts.map((s) => {
-        const pts = layout(this.weights.map(s.get), this.W, this.H, this.pad)
-        return { key: s.key, color: s.color, pts }
+    // 数据点圆点（left/top 各减半径 5rpx，使圆心落在坐标点上）
+    chartDots() {
+      const out = []
+      this.seriesPts.forEach((s) => {
+        s.pts.forEach((p) => {
+          if (!p) return
+          out.push({ k: s.key + '-' + p.i, color: s.color, x: +(p.x - 5).toFixed(1), y: +(p.y - 5).toFixed(1) })
+        })
       })
+      return out
     },
-    gridY() { return this.charts.length ? [this.pad + 30, this.pad + 60, this.H - this.pad - 30] : [] },
+    // 3 条横向辅助网格线，把绘图区四等分
+    gridY() {
+      if (!this.weights.length) return []
+      const s = (this.H - 2 * this.pad) / 4
+      return [+(this.pad + s).toFixed(1), +(this.pad + 2 * s).toFixed(1), +(this.pad + 3 * s).toFixed(1)]
+    },
     // —— 最新概览 ——
     latestW() { return this.weights.length ? this.weights[this.weights.length - 1].weight : null },
     latestFat() { return this.weights.length ? this.weights[this.weights.length - 1].fat : null },
@@ -229,7 +271,18 @@ export default {
 .dot.w { background:var(--brand); }
 .dot.f { background:var(--warning); }
 .cmeta { font-size:22rpx; color:var(--text-2); margin-bottom:8rpx; }
-.chart { width:100%; height:300rpx; }
+
+/* 图表容器用固定 rpx 尺寸：保证宽高比恒定，rotate 角度才与渲染一致；
+   rpx→px 为等比缩放，故 640rpx 始终能放进卡片（卡片内宽约 662rpx）。
+   不用 <svg>：小程序 WXML 不支持内联 SVG 标签。 */
+.chart { position:relative; width:640rpx; height:300rpx; margin:0 auto; }
+.gridline { position:absolute; left:36rpx; right:36rpx; height:1rpx; background:#eee; }
+.seg { position:absolute; height:3rpx; border-radius:2rpx; transform-origin:0 50%; }
+.pt { position:absolute; width:10rpx; height:10rpx; border-radius:50%; border:2rpx solid #fff; box-sizing:border-box; }
+.xlab { position:absolute; bottom:0; font-size:18rpx; color:#999; }
+.xlab.l { left:36rpx; }
+.xlab.r { right:36rpx; }
+
 .empty { color:var(--text-2); text-align:center; padding:40rpx 0; }
 .wrow { margin-bottom:16rpx; display:flex; align-items:center; justify-content:space-between; }
 .wdate { color:var(--text-2); font-size:24rpx; margin-right:16rpx; }

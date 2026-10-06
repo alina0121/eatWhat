@@ -389,7 +389,8 @@ export default {
 .cat-arrow { flex-shrink:0; width:44rpx; height:44rpx; border-radius:50%; background:var(--bg); color:var(--text-2); display:flex; align-items:center; justify-content:center; font-size:34rpx; line-height:1; }
 .cat-arrow.off { opacity:.32; }
 .cat-scroll { flex:1; min-width:0; }
-.cat-row { display:flex; gap:12rpx; padding:4rpx; box-sizing:border-box; }
+/* inline-flex：收缩到内容宽度，小程序 scroll-view scroll-x 才认可滚动区 */
+.cat-row { display:inline-flex; vertical-align:top; gap:12rpx; padding:4rpx; box-sizing:border-box; }
 .ctab { font-size:26rpx; color:var(--text-2); background:var(--card); border:1rpx solid var(--border); border-radius:999rpx; padding:10rpx 24rpx; white-space:nowrap; flex-shrink:0; }
 .ctab.on { background:var(--brand); color:#fff; border-color:var(--brand); font-weight:600; }
 .cat-track { position:relative; height:6rpx; background:#E5E3EE; border-radius:3rpx; margin:4rpx 0 6rpx; overflow:hidden; }
