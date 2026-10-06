@@ -7,7 +7,10 @@
 //  - 小程序 / App：uni.request 不支持相对路径，必须绝对地址，
 //        且小程序要求 HTTPS + 后台配置 request 合法域名（无代理层可用）
 // 部署时只需改 MP_BASE 一行：换成已备案的 HTTPS 域名
-const MP_BASE = 'https://api.example.com/api'
+// 本地联调：开发者工具「详情 → 本地设置」勾选「不校验合法域名…」后，
+//          模拟器可直接用 http://127.0.0.1:8000 连本机后端；
+//          真机预览需改成本机局域网 IP（如 http://192.168.x.x:8000），手机与电脑同一 WiFi
+const MP_BASE = 'http://127.0.0.1:8000'
 
 // #ifdef H5
 const BASE = '/api'
