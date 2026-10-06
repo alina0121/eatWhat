@@ -149,3 +149,20 @@ export const adminApi = {
 export const mineApi = {
   stats: () => req.get('/mine/stats')
 }
+// 登录体系：微信 code / 邮箱验证码 / 绑定 / 注销
+export const authApi = {
+  // 微信小程序登录（wx.login code 换 token）
+  login: (code, nickname, avatar) => req.post('/auth/login', { code, nickname, avatar }),
+  // 邮箱验证码登录 / 自动注册（H5/App 端）
+  loginEmail: (email, code, nickname) => req.post('/auth/login-email', { email, code, nickname }),
+  // 发邮箱验证码（purpose: login | bind | reset）
+  sendEmailCode: (email, purpose = 'login') => req.post('/auth/send-email-code', { email, purpose }),
+  // 当前用户
+  me: () => req.get('/auth/me'),
+  updateProfile: (data) => req.put('/auth/profile', data),
+  // 绑定 / 解绑邮箱
+  bindEmail: (email, code) => req.post('/auth/bind-email', { email, code }),
+  unbindEmail: () => req.post('/auth/unbind-email'),
+  // 注销账户（物理删除所有数据）
+  deleteMe: () => req.del('/auth/me'),
+}

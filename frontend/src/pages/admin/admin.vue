@@ -207,6 +207,50 @@
               <textarea class="pool grad-pool" v-model="gradPool" @blur="setGradPool" />
               <view class="pool-preview">预览：<view v-for="(g,i) in grads" :key="i" class="p-grad" :style="{ background: g }"></view></view>
             </view>
+
+            <!-- 邮箱 SMTP 配置 -->
+            <view class="cfg-row cfg-col">
+              <view class="cfg-head"><text class="cfg-ic">📧</text><view class="cfg-c"><text class="cfg-t">邮箱 SMTP 配置</text><text class="cfg-s">QQ/163 邮箱设置里的「授权码」填 smtp_pass；保存后立即生效；未配置时验证码降级为后端日志打印</text></view></view>
+              <view class="smtp-grid">
+                <view class="smtp-field">
+                  <text class="smtp-label">Host</text>
+                  <input class="num w200" :value="smtpHost" @blur="setCfg('smtp_host', $event.target.value)" placeholder="smtp.qq.com" />
+                </view>
+                <view class="smtp-field">
+                  <text class="smtp-label">Port</text>
+                  <input class="num w100" :value="smtpPort" @blur="setCfg('smtp_port', $event.target.value)" placeholder="465" />
+                </view>
+                <view class="smtp-field">
+                  <text class="smtp-label">User</text>
+                  <input class="num w240" :value="smtpUser" @blur="setCfg('smtp_user', $event.target.value)" placeholder="eatwhat@qq.com" />
+                </view>
+                <view class="smtp-field">
+                  <text class="smtp-label">Pass</text>
+                  <input class="num w240" :value="smtpPass" type="password" @blur="setCfg('smtp_pass', $event.target.value)" placeholder="QQ/163 授权码（非邮箱密码）" />
+                </view>
+                <view class="smtp-field">
+                  <text class="smtp-label">From</text>
+                  <input class="num w200" :value="smtpFrom" @blur="setCfg('smtp_from', $event.target.value)" placeholder="吃啥好呀" />
+                </view>
+                <view class="smtp-field">
+                  <text class="smtp-label">有效期（分钟）</text>
+                  <input class="num w120" type="number" :value="otpExpire" @blur="setCfg('otp_expire_min', $event.target.value)" />
+                </view>
+              </view>
+              <view class="cfg-row mt12">
+                <text class="cfg-ic">🔑</text>
+                <view class="cfg-c"><text class="cfg-t">JWT 签名密钥</text><text class="cfg-s">务必修改！否则开发期占位码上线会有安全风险</text></view>
+                <input class="num w300" :value="jwtSecret" @blur="setCfg('jwt_secret', $event.target.value)" />
+              </view>
+              <view class="cfg-row">
+                <text class="cfg-ic">💬</text>
+                <view class="cfg-c"><text class="cfg-t">微信 AppID / AppSecret</text><text class="cfg-s">个人开发者也能申请；填好后小程序登录会走真实 openid 而非 mock</text></view>
+                <view class="cfg-vert">
+                  <input class="num w220" :value="mpAppid" @blur="setCfg('mp_appid', $event.target.value)" placeholder="wx..." />
+                  <input class="num w220 mt6" :value="mpSecret" type="password" @blur="setCfg('mp_secret', $event.target.value)" placeholder="AppSecret（不是邮箱密码）" />
+                </view>
+              </view>
+            </view>
           </view>
         </template>
       </view>
@@ -310,6 +354,9 @@ export default {
       recipeIcons: [], recipePool: '',
       shopIcons: [], shopPool: '',
       gradPool: '',
+      // 邮箱 SMTP + JWT + 微信 AppID 配置
+      smtpHost: '', smtpPort: '465', smtpUser: '', smtpPass: '', smtpFrom: '',
+      otpExpire: '10', jwtSecret: '', mpAppid: '', mpSecret: '',
       // 搜索 / 筛选 / 分页
       tipQ: '', tipSt: 'all', tipLimit: 20, tipSts: [
         { k: 'all', t: '全部' }, { k: 'pending', t: '待审核' }, { k: 'approved', t: '已公开' }, { k: 'rejected', t: '未通过' }
@@ -429,6 +476,21 @@ export default {
         this.shopPool = sp.value || ''
         this.shopIcons = (sp.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean)
         this.gradPool = gp.value || ''
+        // SMTP + JWT + 微信 AppID 配置
+        const [sh, spt, su, sd, sf, oe, js, ma, msec] = await Promise.all([
+          configApi.get('smtp_host'), configApi.get('smtp_port'), configApi.get('smtp_user'),
+          configApi.get('smtp_pass'), configApi.get('smtp_from'), configApi.get('otp_expire_min'),
+          configApi.get('jwt_secret'), configApi.get('mp_appid'), configApi.get('mp_secret'),
+        ])
+        this.smtpHost = sh.value || ''
+        this.smtpPort = spt.value || '465'
+        this.smtpUser = su.value || ''
+        this.smtpPass = sd.value || ''
+        this.smtpFrom = sf.value || ''
+        this.otpExpire = oe.value || '10'
+        this.jwtSecret = js.value || ''
+        this.mpAppid = ma.value || ''
+        this.mpSecret = msec.value || ''
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
     // —— 用户管理 ——
@@ -492,6 +554,8 @@ export default {
     },
     // —— 配置 ——
     setAudit(e) { this.audit = e.detail.value; configApi.set('audit_enabled', this.audit ? '1' : '0') },
+    // 通用配置项保存（SMTP / JWT / AppID 等所有 configs 表 key）
+    setCfg(key, val) { configApi.set(key, String(val != null ? val : '')) },
     setExpiry(e) {
       const v = Number(e.detail.value)
       if (!isNaN(v) && v > 0) { this.expiry = v; configApi.set('expiry_threshold_days', String(v)) }
