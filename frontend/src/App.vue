@@ -31,7 +31,7 @@ page {
   /* 微信胶囊按钮（右上角）占位：宽度 88rpx + 右边距 ≈ 180rpx，
      所有自绘顶栏（navigationStyle:custom）的 padding-right 应使用此变量，
      H5 端浏览器无胶囊，变量保持 140rpx 不影响视觉。 */
-  --nav-safe-right: 140rpx;
+  --nav-safe-right: 180rpx;
 
   height: 100%;
   background: var(--bg);
