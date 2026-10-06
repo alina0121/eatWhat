@@ -235,8 +235,8 @@ def update_profile(
 
 @router.get("/me")
 def get_me(uid: int = Depends(get_current_user), conn=Depends(get_conn)):
-    """获取当前登录用户信息。"""
-    row = conn.execute("SELECT id, nickname, avatar, role FROM users WHERE id=?", (uid,)).fetchone()
+    """获取当前登录用户信息（含绑定邮箱，前端「我的」页展示用）。"""
+    row = conn.execute("SELECT id, nickname, avatar, role, email FROM users WHERE id=?", (uid,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="用户不存在")
     return dict(row)

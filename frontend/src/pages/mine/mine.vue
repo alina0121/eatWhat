@@ -89,12 +89,17 @@
           </view>
           <!-- #endif -->
 
+          <!-- 登录（未登录时才显示；H5/App 走邮箱验证码，小程序端启动即静默登录） -->
+          <view class="mrow" v-if="!isLogin" @tap="goLogin">
+            <text class="ic">🔑</text><view class="m1"><text class="mt">登录 / 注册</text><text class="ms">邮箱验证码登录，登录后可绑定邮箱</text></view><text class="ar">›</text>
+          </view>
+
           <!-- 绑定邮箱 -->
           <view class="mrow" @tap="openBindEmail">
             <text class="ic">📧</text>
             <view class="m1">
               <text class="mt">邮箱绑定</text>
-              <text class="ms">{{ userEmail ? '已绑定 ' + maskEmail(userEmail) : '未绑定 · H5/App 登录用' }}</text>
+              <text class="ms">{{ !isLogin ? '未登录 · 点击去登录' : (userEmail ? '已绑定 ' + maskEmail(userEmail) : '未绑定 · H5/App 登录用') }}</text>
             </view>
             <text class="ar">›</text>
           </view>
@@ -200,10 +205,11 @@ export default {
              allTags: [], tagSel: [],   // 口味标签池（来自 tasteApi）+ 当前选中
              form: { show: false, mode: '', title: '', val: '', hint: '', id: null },
              // 邮箱绑定 / 注销相关
+             isLogin: false,
              userEmail: '', emailCd: 0, emailDialog: { show: false, email: '', code: '' },
              deleteDialog: { show: false, step: 1, val: '' }, }
   },
-  onShow() {
+  async onShow() {
     this.curName = uni.getStorageSync('eat_user') || '我'
     // 管理员演示开关：本地标记（MVP）
     this.isAdmin = uni.getStorageSync('eat_admin') === '1'
@@ -214,7 +220,12 @@ export default {
       this.isPc = !!(info && info.windowWidth >= 1024)
     } catch (e) { this.isPc = false }
     this.load()
-    this.loadUserEmail()
+    await this.loadUserEmail()
+    // 从登录页带「bind」意图返回 → 自动弹出邮箱弹窗，省去用户再点一次
+    if (uni.getStorageSync('eat_open_bind_after_login')) {
+      uni.removeStorageSync('eat_open_bind_after_login')
+      if (this.isLogin) this.emailDialog = { show: true, email: '', code: '' }
+    }
   },
   methods: {
     async load() {
@@ -288,11 +299,15 @@ export default {
     // ---------- 邮箱绑定 / 注销 ----------
 
     async loadUserEmail() {
+      this.isLogin = !!uni.getStorageSync(request.TOKEN_KEY)
+      if (!this.isLogin) { this.userEmail = ''; return }
       try {
         const me = await authApi.me()
         this.userEmail = me.email || ''
       } catch (e) {
-        // 没 token / 后端没接登录 → userEmail 保持空
+        // token 失效（request.js 已清 token）→ 回到未登录态
+        this.isLogin = !!uni.getStorageSync(request.TOKEN_KEY)
+        this.userEmail = ''
       }
     },
     maskEmail(email) {
@@ -301,12 +316,14 @@ export default {
       if (u.length <= 2) return u[0] + '***@' + d
       return u[0] + '***' + u.slice(-1) + '@' + d
     },
+    // 去登录页（H5/App 邮箱验证码登录）；redirect 用于回跳后自动接续原意图
+    goLogin(redirect = '') {
+      uni.navigateTo({ url: `/pages/login/login${redirect ? `?redirect=${redirect}` : ''}` })
+    },
     openBindEmail() {
-      if (!request.TOKEN_KEY || !uni.getStorageSync(request.TOKEN_KEY)) {
-        uni.showToast({ title: '请先登录', icon: 'none' })
-        return
-      }
-      this.emailDialog = { show: true, email: this.userEmail || '', code: '' }
+      // 未登录 → 跳到登录页，登录成功后自动回来弹出绑定弹窗
+      if (!uni.getStorageSync(request.TOKEN_KEY)) return this.goLogin('bind')
+      this.emailDialog = { show: true, email: '', code: '' }
     },
     async sendEmailCode() {
       if (!this.emailDialog.email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(this.emailDialog.email)) {
