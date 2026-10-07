@@ -128,15 +128,47 @@ eatWhat/
 - **封面图库为管理员维护实体**：`covers` 表（emoji + 渐变 + 排序），菜谱封面未设时按 id 轮换默认渐变回退。
 - **参考菜谱（source=admin）只读**：不可编辑/删除，仅管理员在 PC 管理端录入。
 - **第一版为演示式权限**：无登录体系，管理员身份用前端本地 `eat_admin` 开关标记（MVP 语义）。
-- **H5 兼容**：`uni.showModal` 的 `editable` 参数在 H5 无效，需编辑处一律使用页内自绘弹窗/联表替代。
+- **已升级为真登录体系**：见下文「登录 & 鉴权」。
 
 ---
 
-## 🖥️ PC 管理端
+## 🔐 登录 & 鉴权（已落地）
 
-在**桌面宽屏**（视口 ≥ 1024）打开「我的 → 管理端（PC）」进入，左侧菜单 + 右侧内容区：
-厨房技巧审核 / 参考菜谱 / 封面图库 / 食材库 & 大类 / 餐厅 / 系统配置。
-复用同一套 API，面板布局使用 px（避免桌面 rpx 放大）。移动端不显示该入口，不影响原有 tab 功能。
+- **H5 / App 端**：邮箱验证码登录（登录页）。
+- **微信小程序**：启动即静默 `wx.login` 换 openid（未配 mp_appid/secret 时用 `mock_openid` 稳定化）；登录后可绑定邮箱。
+- **写操作鉴权**：未登录（无用户 token / 管理台令牌）一律 401；`get_write_user` 依赖同时接受用户 token 或管理台独立令牌。
+- **PC 管理端**：口令登录（配置表 `admin_passcode`，默认 123456），后端签发独立管理员令牌 `X-Admin-Token`，与用户端 `eat_token` 并存。
+- **openid 唯一**：`CREATE UNIQUE INDEX idx_users_openid ON users(openid)`，一个微信号一个账号。
+
+---
+
+## 🚀 生产部署（已实测）
+
+详见 [DEPLOY.md](file:///d:/myProject/eatWhat/DEPLOY.md)。速查：
+
+| 项 | 值 |
+|---|---|
+| 后端 | Alibaba Cloud Linux 3 + Python 3.11 + FastAPI + SQLite |
+| 进程守护 | systemd 直接调 uvicorn（`--workers 4 --host 127.0.0.1 --port 8001`） |
+| 反代 | Caddy HTTPS（Let's Encrypt 自动签） |
+| API 域名 | `https://eatwhat.icefun.cn` |
+| 小程序 MP_BASE | `https://eatwhat.icefun.cn/api`（Caddy 只接 `/api/*`，必须带前缀） |
+| Caddyfile 关键 | `handle /api/* { uri strip_prefix /api; reverse_proxy 127.0.0.1:8001 }` |
+| 微信合法域名 | 配一次 `https://eatwhat.icefun.cn` 即可覆盖 `/api/*` 所有请求 |
+
+---
+
+## 🎨 Emoji 查找（项目里大量用到）
+
+菜谱封面 emoji、tabBar 图标、口味标签候选、食材图标池、大类图标——都从这里挑：
+
+| 站 | 特点 |
+|---|---|
+| **https://emojipedia.org** | 最全：分类浏览、各平台渲染预览、搜索快 |
+| https://getemoji.com | 点击复制即用 |
+| https://www.webfx.com/tools/emoji-cheat-sheet/ | 分类清晰（食物/动物/手/符号…） |
+
+**后端 emoji 池由管理员在系统配置里维护**（`recipe_emoji_pool` / `ingredient_icon_pool` / `cat_icon_pool`）。
 
 ---
 

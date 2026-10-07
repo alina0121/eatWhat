@@ -127,7 +127,12 @@ sudo tee -a /etc/caddy/Caddyfile > /dev/null << 'EOF'
 
 # ===== 吃啥 =====
 eatwhat.icefun.cn {
-    reverse_proxy 127.0.0.1:8001
+    # 前端（H5 / 小程序）统一走 /api/*，Caddy strip_prefix 后反代到后端根路径
+    # 否则 FastAPI 找不到 /api/auth/login 这种带前缀的路由（后端是根挂载）
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy 127.0.0.1:8001
+    }
 }
 EOF
 
@@ -215,6 +220,7 @@ eatwhat.icefun.cn {
     file_server
 
     handle /api/* {
+        uri strip_prefix /api
         reverse_proxy 127.0.0.1:8001
     }
 
@@ -328,7 +334,7 @@ journalctl -u caddy -f
 |---|---|---|
 | uvicorn | `run.py`（reload=True, 单 worker） | systemd 直接调 uvicorn（workers=4, 无 reload） |
 | DB | `backend/eatwhat.db` | 同一个位置 `backend/eatwhat.db` |
-| 前端 API | H5 走 vite 代理 `/api`；小程序走 `MP_BASE` | 小程序必须 `const MP_BASE = 'https://eatwhat.icefun.cn'` |
+| 前端 API | H5 走 vite 代理 `/api`；小程序走 `MP_BASE` | **小程序必须** `const MP_BASE = 'https://eatwhat.icefun.cn/api'`（Caddy 只接管 `/api/*` 前缀，后端路由根挂载） |
 | CORS | 开发允许 `*` | 生产也允许 `*`（反代在 Caddy 层解决跨域） |
 
 ---
@@ -347,3 +353,37 @@ journalctl -u caddy -f
 ---
 
 *文档版本：2026-10-07，基于 Alibaba Cloud Linux 3 + Python 3.11 + Caddy + systemd + uvicorn 实测*
+
+---
+
+## 9. 踩坑排障速查
+
+| 现象 | 根因 | 修 |
+|---|---|---|
+| 体验版扫码**白屏**无报错 | `request.js` 顶层 `ensureLogin()` 无 catch → unhandled rejection | `ensureLogin()` → `ensureLogin().catch(() => {})` |
+| 小程序请求 `404` 但 H5 正常 | MP_BASE 没带 `/api`，Caddy 只接管 `/api/*` 前缀 | `const MP_BASE = 'https://eatwhat.icefun.cn/api'`（不是直接域名） |
+| Caddyfile 重载报 `ambiguous site definition` | 同名域名写了两段 | 覆盖整个 Caddyfile 而非 tee 追加 |
+| Let's Encrypt finalize `context deadline exceeded` | 国内服务器连 acme-v02 偶发超时 | `systemctl restart caddy` 重试（HTTP-01 验证已过）；仍不行换阿里云免费证书 |
+| 管理台登录后写操作仍 `401` | 登口令只存了 `eat_admin` 标记，没存 `eat_admin_token` | `/admin/login` 返回的 token 必须 `uni.setStorageSync(ADMIN_TOKEN_KEY, token)` |
+| `python run.py prod` 多 worker 报 `Directory ... does not exist` | 生产没构建 `web/` 静态，main.py 硬挂载会崩 | 改成目录存在才挂载（`if _WEB_DIR.is_dir(): ...`） |
+| SQLite WAL 分叉（进程间看不同步） | Python sqlite3 和 uvicorn 各开一连接池 | 关掉 WAL：`PRAGMA journal_mode=DELETE`；或统一经 uvicorn |
+
+---
+
+## 10. Emoji 查找（项目里大量用到 emoji：菜谱封面、tabBar、口味标签候选、食材图标池、大类图标）
+
+| 站 | 特点 |
+|---|---|
+| **https://emojipedia.org** | 最全：分类浏览、iOS/Google/Apple 各平台渲染预览、搜索快、最新 emoji |
+| https://getemoji.com | 点击复制即用，有设备过滤（手机/桌面/所有） |
+| https://www.webfx.com/tools/emoji-cheat-sheet/ | 分类清晰（食物/动物/手/符号…），适合挑菜谱封面 |
+| https://www.character-codes.com/emojis/ | 有 emoji → CSS 字符码对照，写样式时有用 |
+
+**项目里 emoji 的三处来源**：
+1. **后端 configs 表**：`recipe_emoji_pool`（菜谱封面 emoji 池）、`ingredient_icon_pool` / `cat_icon_pool`（食材/大类图标池）、`cover_grad_pool`（菜谱封面渐变）——管理台「系统配置」里维护
+2. **前端硬编码候选**：口味标签候选（SKILL eatwhat-v1-ui 里有）、tabBar 图标（manifest.json pages）
+3. **菜谱字段**：`recipes.em` 存单条封面 emoji（从 emoji_pool 里点选）
+
+---
+
+*文档版本：2026-10-08，Alibaba Cloud Linux 3 + Python 3.11 + Caddy + systemd + uvicorn 4 worker 实测*
