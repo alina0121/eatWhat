@@ -9,7 +9,10 @@
 // 未登录不能写：非 GET 请求被 401 时，这里统一提示「请先登录」并跳登录页，
 //       避免各页自己处理导致「点了没反应」。
 
-const MP_BASE = 'http://192.168.31.113:8000'
+// MP_BASE：小程序/App 端直接调后端绝对地址（必须 HTTPS + 域名，不能用 IP，否则微信合法域名校验不通过）。
+// H5 端用 vite 代理 '/api'，不走这里。
+// 改后端地址只改这一行。
+const MP_BASE = 'https://eatwhat.icefun.cn'
 
 // #ifdef H5
 const BASE = '/api'

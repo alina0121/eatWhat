@@ -19,3 +19,4 @@ backend/eatwhat.db-*
 # 编辑器与本机环境
 .DS_Store
 *.local
+*.tar
