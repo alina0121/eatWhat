@@ -178,6 +178,9 @@ class LoginBody(BaseModel):
     code: str
     nickname: Optional[str] = None
     avatar: Optional[str] = None
+    # 开发期用：小程序前端首次启动生成一个 uuid 存 storage，wx.login 时连同 code 一起传过来，
+    # 没配 mp_appid/secret 时用这个稳定 uuid 当 mock openid，避免每次 code 变 → 每次新建账号。
+    mock_openid: Optional[str] = None
 
 
 class LoginOut(BaseModel):
@@ -211,8 +214,12 @@ def login(body: LoginBody, conn=Depends(get_conn)):
         openid = wx_data.get("openid")
         unionid = wx_data.get("unionid", "")
     else:
-        # Mock：把 code 当成伪 openid（取前 28 字符），开发期够用
-        openid = f"dev_{body.code[:28]}"
+        # Mock：优先用前端传来的固定 mock_openid（storage 持久化，开发期稳定）；
+        # 没传的兜底回退到 dev_<code[:28]>（每次 code 变会新建，留着做安全兜底）
+        if body.mock_openid and len(body.mock_openid) <= 40:
+            openid = f"dev_{body.mock_openid}"
+        else:
+            openid = f"dev_{body.code[:28]}"
         unionid = ""
 
     # 3. upsert users 表

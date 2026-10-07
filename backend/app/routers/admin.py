@@ -113,13 +113,15 @@ def update_user(uid: int, body: UserPatch, conn: Connection = Depends(get_db),
     target = _get_user(conn, uid)
     data = body.model_dump(exclude_none=True)
 
-    # —— 角色降级拦截 ——
-    if "role" in data and data["role"] != "admin":
-        # 自己不能把自己踢下台（否则管理端只剩自己一个 admin，把自己降了就全锁死）
-        if uid == _admin:
-            raise HTTPException(403, "不能把自己降级为普通用户")
-        # 注：「目标是 admin 就永远不让降级」不做硬拦截——管理员数量必须是运营决策，但自降级必须锁死；
-        # 真要降别的 admin，另一个管理员可以，避免多管理员场景下某个 admin 被永久锁为 admin。
+    # —— 角色变更拦截（只拦"当前用户操作自己"场景，操作别人不受限）——
+    if "role" in data and uid == _admin:
+        # 自己不能把自己升级成 admin（防越权 + 防多 admin 互相抬轿子）
+        if data["role"] == "admin":
+            raise HTTPException(403, "不能把自己设置为管理员")
+        # 自己不能把自己降级为普通（防锁死管理端）
+        raise HTTPException(403, "不能把自己降级为普通用户")
+    # 注：操作"别的 admin"时不拦截——比如 admin A 可以降 admin B，这是运营决策，不应锁死。
+    # delete_user 另有自删保护：下面显式处理 uid == _admin 的 403 分支。
 
     if "name" in data:
         data["name"] = data["name"].strip()

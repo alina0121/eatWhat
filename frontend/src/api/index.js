@@ -153,7 +153,15 @@ export const mineApi = {
 // 登录体系：微信 code / 邮箱验证码 / 绑定 / 注销
 export const authApi = {
   // 微信小程序登录（wx.login code 换 token）
-  login: (code, nickname, avatar) => req.post('/auth/login', { code, nickname, avatar }),
+  // 没配 mp_appid/secret 时 body 会带 mock_openid（storage 里的稳定 uuid），后端优先用它
+  login: (code, nickname, avatar) => {
+    const body = { code, nickname, avatar }
+    // #ifdef MP-WEIXIN
+    const devOpenid = uni.getStorageSync('eat_dev_mock_openid')
+    if (devOpenid) body.mock_openid = devOpenid
+    // #endif
+    return req.post('/auth/login', body)
+  },
   // 邮箱验证码登录 / 自动注册（H5/App 端）
   loginEmail: (email, code, nickname) => req.post('/auth/login-email', { email, code, nickname }),
   // 发邮箱验证码（purpose: login | bind | reset）

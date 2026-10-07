@@ -32,6 +32,20 @@ let _loginPromise = null
 // 防重复跳登录页
 let _redirecting = false
 
+// === 小程序 mock openid 稳定化 ===
+// 没配 mp_appid/secret 时后端用 code 前 28 位 mock openid，但开发者工具每次 wx.login 的 code 都变 → 每次新建账号。
+// 解决：前端首次启动生成一个 uuid 存 storage（键 DEV_MOCK_OPENID_KEY），mock 登录时连同 code 一起 POST 给后端；
+// 后端优先用它当 mock openid，跨 app 重启稳定（同一小程序实例看到同一个用户）。
+const DEV_MOCK_OPENID_KEY = 'eat_dev_mock_openid'
+function getOrGenDevMockOpenid() {
+  let v = uni.getStorageSync(DEV_MOCK_OPENID_KEY)
+  if (v) return v
+  // 简单 uuid：时间戳 + 随机，40 字符以内（后端也有长度保护）
+  v = Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
+  uni.setStorageSync(DEV_MOCK_OPENID_KEY, v)
+  return v
+}
+
 // 小程序登录流程：wx.login 拿 code → /auth/login 换 token → 存 storage
 async function ensureLogin() {
   const token = uni.getStorageSync(TOKEN_KEY)
@@ -51,7 +65,8 @@ async function ensureLogin() {
         uni.request({
           url: BASE + '/auth/login',
           method: 'POST',
-          data: { code },
+          // mock_openid 传了就稳定；后端没配 mp_appid/secret 时优先用它当 mock openid
+          data: { code, mock_openid: getOrGenDevMockOpenid() },
           timeout: 5000,
           success: res,
           fail: rej,

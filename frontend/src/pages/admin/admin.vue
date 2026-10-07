@@ -63,10 +63,10 @@
               <text class="sm">{{ (u.role === 'admin' ? '管理员' : '普通用户') + (u.email ? ' · ' + u.email : ' · 未绑定邮箱') }}</text>
             </view>
             <view class="sp"></view>
-            <!-- 置灰规则：id=1（内置 admin）所有操作禁；自己禁自降级/自删（防止把自己踢下台锁死） -->
+            <!-- 置灰规则：id=1（内置 admin）所有操作禁；自己这条行全禁（不管当前 role 是什么，自己不能升/降/删自己） -->
             <button class="pbtn ghost" @click="toggleRole(u)"
-                    :class="{ dis: u.id === 1 || (u.id === curAdminId && u.role === 'admin') }"
-                    :disabled="u.id === 1 || (u.id === curAdminId && u.role === 'admin')">
+                    :class="{ dis: u.id === 1 || u.id === curAdminId }"
+                    :disabled="u.id === 1 || u.id === curAdminId">
               {{ u.role === 'admin' ? '设为普通' : '设为管理' }}
             </button>
             <button class="pbtn ghost" @click="editUser(u)" :class="{ dis: u.id === 1 }" :disabled="u.id === 1">✎</button>
