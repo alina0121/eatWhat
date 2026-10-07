@@ -10,9 +10,11 @@
 //       避免各页自己处理导致「点了没反应」。
 
 // MP_BASE：小程序/App 端直接调后端绝对地址（必须 HTTPS + 域名，不能用 IP，否则微信合法域名校验不通过）。
+// 注意：生产 Caddy 反代只接管 /api/* 前缀（uri strip_prefix /api），根路径 / 是 H5 静态。
+// 所以这里必须带 /api，Caddy 才会命中 /api/* handle → strip_prefix → 反代到后端。
+// 微信合法域名只认域名本身不认子路径，后台配一次 https://eatwhat.icefun.cn 就覆盖。
 // H5 端用 vite 代理 '/api'，不走这里。
-// 改后端地址只改这一行。
-const MP_BASE = 'https://eatwhat.icefun.cn'
+const MP_BASE = 'https://eatwhat.icefun.cn/api'
 
 // #ifdef H5
 const BASE = '/api'
@@ -152,8 +154,10 @@ function req(method, path, data) {
 }
 
 // 应用启动时预登录一次（小程序端），尽早拿到 token
+// 注意：这里必须加 .catch(() => {})，否则网络异常 / 合法域名未生效时会变成 unhandled promise rejection，
+// 导致小程序启动直接白屏（体验版基础库比开发者工具更严格）
 // #ifdef MP-WEIXIN
-ensureLogin()
+ensureLogin().catch(() => {})
 // #endif
 
 export default {
