@@ -134,10 +134,17 @@
 
 <script>
 import { configApi } from '@/api'
+import request from '@/utils/request'
 
 export default {
   data() {
     return {
+      // 门控：admin-config 是管理台专属页，必须持有有效 admin token 才能读/写系统配置。
+      // 没登管理台直接进来时，storage 里既无 eat_admin 也无 eat_admin_token：
+      //   GET /configs/{key} 会返回 demo（读接口宽松 get_optional_user），
+      //   PUT /configs/{key} 会 401（写接口严格 get_write_user），保存全部静默失败。
+      // 所以 onLoad 就做门控检查，不满足直接跳回 admin.vue 让用户先登。
+      _ok: false,
       audit: true, expiry: '3', passcode: '',
       ingPool: '', ingIcons: [],
       catPool: '', catIcons: [],
@@ -156,7 +163,18 @@ export default {
       return !!(this.smtpHost && this.smtpUser && this.smtpPass)
     },
   },
-  onLoad() { this.load() },
+  onLoad() {
+    // 管理台专属页：必须持有有效 admin token 才能继续
+    const hasAdmin = uni.getStorageSync('eat_admin') === '1'
+    const hasToken = !!uni.getStorageSync(request.ADMIN_TOKEN_KEY)
+    if (!hasAdmin || !hasToken) {
+      uni.showToast({ title: '请先在管理台登录', icon: 'none' })
+      setTimeout(() => uni.reLaunch({ url: '/pages/admin/admin' }), 600)
+      return
+    }
+    this._ok = true
+    this.load()
+  },
   methods: {
     back() { uni.navigateBack() },
 
@@ -204,7 +222,18 @@ export default {
         await configApi.set(key, String(val == null ? '' : val).trim())
         uni.showToast({ title: '已保存', icon: 'none', duration: 700 })
       } catch (e) {
-        uni.showToast({ title: e.message || '保存失败', icon: 'none' })
+        // 401 = admin token 失效或未登录 → 清会话，跳回 admin.vue 让重新登
+        // （后端 get_write_user 会同时接受用户 token 和 admin token，本页场景下应该走 admin token，
+        //   如果还是 401，说明 admin 会话丢了）
+        const msg = e.message || ''
+        if (msg.indexOf('请先登录') >= 0) {
+          uni.removeStorageSync('eat_admin')
+          uni.removeStorageSync(request.ADMIN_TOKEN_KEY)
+          uni.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
+          setTimeout(() => uni.reLaunch({ url: '/pages/admin/admin' }), 800)
+          return
+        }
+        uni.showToast({ title: '保存失败：' + msg, icon: 'none' })
       }
     },
     saveNum(key, val) {

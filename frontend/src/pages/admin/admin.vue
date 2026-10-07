@@ -57,11 +57,22 @@
           </view>
           <view class="row card" v-for="u in users" :key="u.id">
             <view class="uico">{{ u.role === 'admin' ? '👑' : '🙂' }}</view>
-            <view class="uc"><text class="sn">{{ u.name }}</text><text class="sm">{{ u.role === 'admin' ? '管理员' : '普通用户' }}</text></view>
+            <!-- 展示名以后端 nickname 为准（老数据可能只在 name 里）；邮箱一并显示，方便管理和核对账号 -->
+            <view class="uc">
+              <text class="sn">{{ u.nickname || u.name || ('用户' + u.id) }}</text>
+              <text class="sm">{{ (u.role === 'admin' ? '管理员' : '普通用户') + (u.email ? ' · ' + u.email : ' · 未绑定邮箱') }}</text>
+            </view>
             <view class="sp"></view>
-            <button class="pbtn ghost" @click="toggleRole(u)">{{ u.role === 'admin' ? '设为普通' : '设为管理' }}</button>
-            <button class="pbtn ghost" @click="editUser(u)">✎</button>
-            <button class="pbtn danger" @click="delUser(u)" :class="{ dis: u.id === 1 }">✕</button>
+            <!-- 置灰规则：id=1（内置 admin）所有操作禁；自己禁自降级/自删（防止把自己踢下台锁死） -->
+            <button class="pbtn ghost" @click="toggleRole(u)"
+                    :class="{ dis: u.id === 1 || (u.id === curAdminId && u.role === 'admin') }"
+                    :disabled="u.id === 1 || (u.id === curAdminId && u.role === 'admin')">
+              {{ u.role === 'admin' ? '设为普通' : '设为管理' }}
+            </button>
+            <button class="pbtn ghost" @click="editUser(u)" :class="{ dis: u.id === 1 }" :disabled="u.id === 1">✎</button>
+            <button class="pbtn danger" @click="delUser(u)"
+                    :class="{ dis: u.id === 1 || u.id === curAdminId }"
+                    :disabled="u.id === 1 || u.id === curAdminId">✕</button>
           </view>
           <text class="none" v-if="!users.length">还没有用户</text>
         </template>
@@ -254,7 +265,7 @@ export default {
         { k: 'config', ic: '⚙️', t: '系统配置', url: '/pages/admin-config/admin-config' }
       ],
       DEFAULT_GRAD,
-      sec: 'stats', curName: '', isAdmin: false,
+      sec: 'stats', curName: '', isAdmin: false, curAdminId: 0,
       // 登录
       loginCode: '',
       // 统计（仅公共资源计数）
@@ -332,8 +343,15 @@ export default {
     // 旧会话可能只有 eat_admin 标记、没有令牌 → 视为未登录，强制重新输口令，避免后续写操作全部 401。
     const tok = uni.getStorageSync(request.ADMIN_TOKEN_KEY)
     this.isAdmin = uni.getStorageSync('eat_admin') === '1' && !!tok
-    if (!this.isAdmin) uni.removeStorageSync('eat_admin')
-    if (this.isAdmin) this.loadAll()
+    if (!this.isAdmin) {
+      uni.removeStorageSync('eat_admin')
+      uni.removeStorageSync('eat_admin_uid')
+      this.curAdminId = 0
+    } else {
+      // 读当前 admin 的 uid（后端 admin_login 返回；用于自降级/自删按钮置灰）
+      this.curAdminId = Number(uni.getStorageSync('eat_admin_uid') || 0)
+      this.loadAll()
+    }
   },
   methods: {
     // 根据大类名称查 icon（emoji），查不到回退 🥗
@@ -356,6 +374,9 @@ export default {
         const r = await adminApi.login(code)
         uni.setStorageSync('eat_admin', '1')
         uni.setStorageSync(request.ADMIN_TOKEN_KEY, r.token || '')
+        // 存 admin uid，用于用户管理列表里「自降级/自删」按钮置灰（防止把自己踢下台锁死）
+        uni.setStorageSync('eat_admin_uid', String(r.user_id || ''))
+        this.curAdminId = Number(r.user_id || 0)
         this.isAdmin = true
         uni.showToast({ title: '登录成功', icon: 'success' })
         this.loadAll()
@@ -398,7 +419,7 @@ export default {
     },
     // —— 用户管理 ——
     openUserAdd() { this.form = { id: null, name: '', role: 'user' }; this.modal = { show: true, mode: 'user', id: null } },
-    editUser(u) { this.form = { id: u.id, name: u.name, role: u.role }; this.modal = { show: true, mode: 'user', id: u.id } },
+    editUser(u) { this.form = { id: u.id, name: u.nickname || u.name || '', role: u.role }; this.modal = { show: true, mode: 'user', id: u.id } },
     toggleRole(u) {
       const role = u.role === 'admin' ? 'user' : 'admin'
       if (u.id === 1 && role === 'user') return uni.showToast({ title: '内置管理员不可降级', icon: 'none' })
@@ -406,7 +427,9 @@ export default {
     },
     delUser(u) {
       if (u.id === 1) return uni.showToast({ title: '内置管理员不可删除', icon: 'none' })
-      uni.showModal({ title: '删除用户', content: `删除「${u.name}」？`, confirmText: '删除', confirmColor: '#e64340',
+      const label = u.nickname || u.name || ('用户' + u.id)
+      const mail = u.email ? `（${u.email}）` : ''
+      uni.showModal({ title: '删除用户', content: `删除「${label}」${mail}？`, confirmText: '删除', confirmColor: '#e64340',
         success: (res) => { if (res.confirm) adminApi.delUser(u.id).then(this.loadAll) } })
     },
     // —— 食材大类（只管公共层） ——

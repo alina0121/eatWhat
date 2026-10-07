@@ -92,8 +92,10 @@ def create_user(body: UserIn, conn: Connection = Depends(get_db), _admin: int = 
         raise HTTPException(400, "名称不能为空")
     if conn.execute("SELECT id FROM users WHERE name=?", (name,)).fetchone():
         raise HTTPException(409, "已存在同名用户")
+    # name 与 nickname 同步写入：展示名统一以后端 nickname 为准
+    # （微信/邮箱登录也只写 nickname），否则新增的用户在各处都显示不出名字
     cur = conn.execute(
-        "INSERT INTO users(name,role) VALUES(?,?)", (name, body.role)
+        "INSERT INTO users(name,nickname,role) VALUES(?,?,?)", (name, name, body.role)
     )
     return {"id": cur.lastrowid, "ok": True}
 
@@ -101,9 +103,24 @@ def create_user(body: UserIn, conn: Connection = Depends(get_db), _admin: int = 
 @router.put("/users/{uid}")
 def update_user(uid: int, body: UserPatch, conn: Connection = Depends(get_db),
                 _admin: int = Depends(get_write_user)):
-    """改名 / 切换角色。"""
-    _get_user(conn, uid)
+    """改名 / 切换角色。
+
+    安全规则：
+    - 不能把「自己」降级为普通用户（admin → user），否则管理端会自锁死；
+    - 内置演示管理员 id=1 不可降级（前端已有 disabled 样式，后端再次兜底）。
+    改名 / 改别人的角色不受限。
+    """
+    target = _get_user(conn, uid)
     data = body.model_dump(exclude_none=True)
+
+    # —— 角色降级拦截 ——
+    if "role" in data and data["role"] != "admin":
+        # 自己不能把自己踢下台（否则管理端只剩自己一个 admin，把自己降了就全锁死）
+        if uid == _admin:
+            raise HTTPException(403, "不能把自己降级为普通用户")
+        # 注：「目标是 admin 就永远不让降级」不做硬拦截——管理员数量必须是运营决策，但自降级必须锁死；
+        # 真要降别的 admin，另一个管理员可以，避免多管理员场景下某个 admin 被永久锁为 admin。
+
     if "name" in data:
         data["name"] = data["name"].strip()
         if not data["name"]:
@@ -113,6 +130,9 @@ def update_user(uid: int, body: UserPatch, conn: Connection = Depends(get_db),
             (data["name"], uid),
         ).fetchone():
             raise HTTPException(409, "已存在同名用户")
+        # 同步 nickname：展示名以后端 nickname 为准（微信/邮箱登录也只写它），
+        # 否则管理端改完名字，用户列表/「我的」页仍显示旧名或不显示
+        data["nickname"] = data["name"]
     if not data:
         raise HTTPException(400, "没有可更新的字段")
     sets = ", ".join(f"{k}=?" for k in data)
@@ -123,9 +143,16 @@ def update_user(uid: int, body: UserPatch, conn: Connection = Depends(get_db),
 @router.delete("/users/{uid}")
 def delete_user(uid: int, conn: Connection = Depends(get_db),
                 _admin: int = Depends(get_write_user)):
-    """删除用户（保留演示管理员 id=1，不可删）。"""
+    """删除用户。
+
+    安全规则：
+    - 内置演示管理员 id=1 不可删（原始约束，前后端一致）；
+    - 不能删除「自己」，否则管理端会自锁死（无管理员可用）。
+    """
     if uid == 1:
         raise HTTPException(400, "内置管理员不可删除")
+    if uid == _admin:
+        raise HTTPException(403, "不能删除自己")
     _get_user(conn, uid)
     conn.execute("DELETE FROM users WHERE id=?", (uid,))
     return {"id": uid, "ok": True}
