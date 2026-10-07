@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS configs(
 -- 菜谱：source=my 我的菜谱（可编辑）；source=admin 参考菜谱（只读）
 CREATE TABLE IF NOT EXISTS recipes(
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1,    -- 所属用户；source=admin 的参考菜谱是公共内容，不按此列过滤
     source  TEXT NOT NULL DEFAULT 'my',    -- my | admin
     name    TEXT NOT NULL,
     em      TEXT NOT NULL DEFAULT '🍽',
@@ -113,6 +114,7 @@ CREATE TABLE IF NOT EXISTS purchase(
 -- subs：JSON {name: 数量}，记录该候选代号入待采购的量，移除时按量回退，保证 COOK 一致
 CREATE TABLE IF NOT EXISTS eat_inbox(
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id  INTEGER NOT NULL DEFAULT 1,   -- 所属用户：候选/计时都属于创建它的那个人
     kind     TEXT NOT NULL,                -- recipe | shop
     ref_id   INTEGER,                      -- 关联菜谱/餐厅 id（可为空）
     name     TEXT NOT NULL,
@@ -133,6 +135,7 @@ CREATE TABLE IF NOT EXISTS tracks(
 -- 餐厅收藏
 CREATE TABLE IF NOT EXISTS shops(
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id   INTEGER NOT NULL DEFAULT 1,  -- 所属用户：餐厅收藏按人隔离
     name      TEXT NOT NULL,
     type      TEXT NOT NULL DEFAULT '中餐',
     price     TEXT NOT NULL DEFAULT '',
@@ -147,9 +150,10 @@ CREATE TABLE IF NOT EXISTS shops(
 
 -- 干饭成员（用餐人）：每人维护口味偏好
 CREATE TABLE IF NOT EXISTS diners(
-    id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    tags TEXT NOT NULL DEFAULT '[]'        -- JSON：口味/忌口/辣度
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1,   -- 所属用户：干饭成员按人隔离
+    name    TEXT NOT NULL,
+    tags    TEXT NOT NULL DEFAULT '[]'        -- JSON：口味/忌口/辣度
 );
 
 -- 口味标签池：每个用户独立维护自己的标签，菜谱/成员/推荐筛选都从这里取
@@ -164,6 +168,7 @@ CREATE TABLE IF NOT EXISTS taste_tags(
 -- 厨房技巧（内容社区 + 审核闭环）
 CREATE TABLE IF NOT EXISTS tips(
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1,    -- 所属用户：决定「只能改自己的」，author 仅用于展示
     title   TEXT NOT NULL,
     content TEXT NOT NULL,
     cat     TEXT NOT NULL DEFAULT '其他',
@@ -176,15 +181,17 @@ CREATE TABLE IF NOT EXISTS tips(
 
 -- 饮食记录（唯一 id，可编辑/删除）
 CREATE TABLE IF NOT EXISTS records(
-    id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL,                    -- YYYY-MM-DD
-    name TEXT NOT NULL,
-    type TEXT NOT NULL DEFAULT 'cook'      -- cook 自己做 | out 餐厅 | delivery 外卖
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1,   -- 所属用户：饮食记录按人隔离
+    date    TEXT NOT NULL,                -- YYYY-MM-DD
+    name    TEXT NOT NULL,
+    type    TEXT NOT NULL DEFAULT 'cook'      -- cook 自己做 | out 餐厅 | delivery 外卖
 );
 
 -- 体重记录（含体脂）
 CREATE TABLE IF NOT EXISTS weights(
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id   INTEGER NOT NULL DEFAULT 1,  -- 所属用户：体重记录按人隔离
     date      TEXT NOT NULL,
     weight    REAL NOT NULL,
     body_fat  REAL
@@ -217,6 +224,12 @@ def init_db() -> None:
         _scols = {r[1] for r in conn.execute("PRAGMA table_info(shops)").fetchall()}
         if "icon" not in _scols:
             conn.execute("ALTER TABLE shops ADD COLUMN icon TEXT NOT NULL DEFAULT '🏪'")
+        # 迁移：多用户隔离。这 7 张表原来没有 user_id（全站共用一份数据），
+        # 补列时默认值取 1 —— 历史数据统一归到 1 号账号，之后的读写才按登录用户隔离。
+        for _tbl in ("recipes", "shops", "diners", "tips", "records", "weights", "eat_inbox"):
+            _tcols = {r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()}
+            if _tcols and "user_id" not in _tcols:
+                conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1")
         # users 表迁移：老表只有 id/name/role，补上微信登录所需列
         _ucols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
         for _col, _typ, _def in [
@@ -234,6 +247,15 @@ def init_db() -> None:
         if "name" in _ucols and "nickname" in _ucols:
             conn.execute("UPDATE users SET nickname = name WHERE nickname='' AND name IS NOT NULL")
             conn.execute("UPDATE users SET name = '' WHERE name IS NOT NULL")
+        # openid 唯一索引：老库是用 ALTER 补的 openid 列，不带 UNIQUE 约束，
+        # 这里显式补一个唯一索引，保证「一个微信 openid 只对应一个账号」。
+        # 用 try 包住：万一历史数据里有重复 openid，不能让整个启动挂掉。
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_openid ON users(openid)"
+            )
+        except Exception:
+            pass
         # 给老 id=1 的用户补个 mock openid（让现有数据继续可见）
         row1 = conn.execute("SELECT id FROM users WHERE id=1").fetchone()
         if not row1:
@@ -270,7 +292,8 @@ def init_db() -> None:
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('smtp_user','')")
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('smtp_pass','')")
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('smtp_from','吃啥好呀')")
-        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('otp_expire_min','10')")
+        # 验证码有效期（分钟）：默认给 30，避免 QQ/163 投递延迟时「刚收到就已经过期」
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('otp_expire_min','30')")
         # 默认管理员
         conn.execute("INSERT OR IGNORE INTO users(id,name,role) VALUES(1,'管理员','admin')")
         # 食材大类默认种子：仅当表为空时写入（避免把用户删除/改名的大类复活）

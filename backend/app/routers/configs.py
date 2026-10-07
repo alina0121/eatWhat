@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlite3 import Connection
 
 from app.db import get_db
+from .auth import get_write_user
 
 router = APIRouter(prefix="/configs", tags=["configs"])
 
@@ -48,7 +49,8 @@ def get_one(key: str, conn: Connection = Depends(get_db)):
 
 
 @router.put("/{key}")
-def update_config(key: str, body: ConfigIn, conn: Connection = Depends(get_db)):
-    """写单个配置（新增或更新）。"""
+def update_config(key: str, body: ConfigIn, conn: Connection = Depends(get_db),
+                  _admin: int = Depends(get_write_user)):
+    """写单个配置（新增或更新）。仅登录用户 / 管理台可写。"""
     set_config(conn, key, body.value)
     return {"key": key, "value": body.value, "ok": True}

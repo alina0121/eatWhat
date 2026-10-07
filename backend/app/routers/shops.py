@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlite3 import Connection
 
 from app.db import get_db, jdump, jload, row_to_dict
+from app.routers.auth import get_optional_user, get_write_user
 
 router = APIRouter(prefix="/shops", tags=["shops"])
 
@@ -36,38 +37,49 @@ class ShopPatch(BaseModel):
     icon: Optional[str] = None
 
 
-def _get(conn: Connection, sid: int):
+def _get(conn: Connection, sid: int, user: int):
+    """取餐厅并校验归属：餐厅收藏按人隔离，只能看/改自己的。"""
     row = conn.execute("SELECT * FROM shops WHERE id=?", (sid,)).fetchone()
-    if not row:
+    if not row or row["user_id"] != user:
         raise HTTPException(404, "餐厅不存在")
     return row_to_dict(row)
 
 
 @router.get("")
-def list_shops(conn: Connection = Depends(get_db)):
-    rows = conn.execute("SELECT * FROM shops ORDER BY star DESC").fetchall()
+def list_shops(user: int = Depends(get_optional_user),
+               conn: Connection = Depends(get_db)):
+    """当前用户收藏的餐厅。未登录（user=0）为空。"""
+    rows = conn.execute(
+        "SELECT * FROM shops WHERE user_id=? ORDER BY star DESC", (user,)
+    ).fetchall()
     return [row_to_dict(r) for r in rows]
 
 
 @router.post("")
-def create_shop(body: ShopIn, conn: Connection = Depends(get_db)):
+def create_shop(body: ShopIn,
+                user: int = Depends(get_write_user),
+                conn: Connection = Depends(get_db)):
     cur = conn.execute(
-        "INSERT INTO shops(name,type,price,star,must,note,arr_min,transport,tags,icon) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?)",
-        (body.name, body.type, body.price, body.star, jdump(body.must),
+        "INSERT INTO shops(user_id,name,type,price,star,must,note,arr_min,transport,tags,icon) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (user, body.name, body.type, body.price, body.star, jdump(body.must),
          body.note, body.arr_min, body.transport, jdump(body.tags), body.icon or '🏪'),
     )
     return {"id": cur.lastrowid, "ok": True}
 
 
 @router.get("/{sid}")
-def get_shop(sid: int, conn: Connection = Depends(get_db)):
-    return _get(conn, sid)
+def get_shop(sid: int,
+             user: int = Depends(get_optional_user),
+             conn: Connection = Depends(get_db)):
+    return _get(conn, sid, user)
 
 
 @router.put("/{sid}")
-def update_shop(sid: int, body: ShopPatch, conn: Connection = Depends(get_db)):
-    _get(conn, sid)  # 校验存在
+def update_shop(sid: int, body: ShopPatch,
+                user: int = Depends(get_write_user),
+                conn: Connection = Depends(get_db)):
+    _get(conn, sid, user)  # 校验存在且属于当前用户
     data = body.model_dump(exclude_none=True)
     if "must" in data:
         data["must"] = jdump(data["must"])
@@ -79,7 +91,14 @@ def update_shop(sid: int, body: ShopPatch, conn: Connection = Depends(get_db)):
 
 
 @router.delete("/{sid}")
-def delete_shop(sid: int, conn: Connection = Depends(get_db)):
+def delete_shop(sid: int,
+                user: int = Depends(get_write_user),
+                conn: Connection = Depends(get_db)):
+    _get(conn, sid, user)
     conn.execute("DELETE FROM shops WHERE id=?", (sid,))
-    conn.execute("DELETE FROM eat_inbox WHERE kind='shop' AND ref_id=?", (sid,))
+    # 连带清理该用户自己的「吃这些」里的这家店候选（别人的候选不动）
+    conn.execute(
+        "DELETE FROM eat_inbox WHERE kind='shop' AND ref_id=? AND user_id=?",
+        (sid, user),
+    )
     return {"id": sid, "ok": True}

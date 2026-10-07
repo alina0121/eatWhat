@@ -81,6 +81,10 @@
       "path": "pages/admin/admin",
       "style": { "navigationBarTitleText": "PC 管理端", "navigationStyle": "custom" }
     },
+    {
+      "path": "pages/admin-config/admin-config",
+      "style": { "navigationBarTitleText": "系统配置", "navigationStyle": "custom" }
+    },
     // #endif
     {
       "path": "pages/mine-data/mine-data",

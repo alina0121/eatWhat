@@ -29,7 +29,7 @@
     <view class="abody" v-if="isAdmin">
       <!-- 左侧菜单 -->
       <view class="asider">
-        <view class="nav" v-for="m in menus" :key="m.k" :class="{ on: sec === m.k }" @tap="sec = m.k">
+        <view class="nav" v-for="m in menus" :key="m.k" :class="{ on: sec === m.k }" @tap="onNav(m)">
           <text class="nav-ic">{{ m.ic }}</text>
           <text class="nav-t">{{ m.t }}</text>
         </view>
@@ -163,96 +163,6 @@
           <text class="none" v-if="!ingredients.length">公共食材库为空</text>
         </template>
 
-        <!-- ============ 6. 系统配置 ============ -->
-        <template v-if="sec === 'config'">
-          <view class="sec-h"><text class="sh-t">系统配置</text><text class="sh-s">配置表驱动，保存后立即生效</text></view>
-          <view class="cfg card">
-            <view class="cfg-row">
-              <text class="cfg-ic">👨‍🍳</text>
-              <view class="cfg-c"><text class="cfg-t">厨房技巧审核</text><text class="cfg-s">新增/修改技巧需管理员审核</text></view>
-              <switch :checked="audit" @change="setAudit" />
-            </view>
-            <view class="cfg-row">
-              <text class="cfg-ic">⏱</text>
-              <view class="cfg-c"><text class="cfg-t">临期阈值（天）</text><text class="cfg-s">在库食材剩余≤该天数视为临期</text></view>
-              <input class="num" type="number" :value="String(expiry)" @blur="setExpiry" />
-            </view>
-            <view class="cfg-row">
-              <text class="cfg-ic">🔑</text>
-              <view class="cfg-c"><text class="cfg-t">管理员口令</text><text class="cfg-s">登录管理端使用，保存后立即生效</text></view>
-              <input class="num w160" :value="passcode" @blur="setPasscode" />
-            </view>
-            <view class="cfg-row cfg-col">
-              <view class="cfg-head"><text class="cfg-ic">🥕</text><view class="cfg-c"><text class="cfg-t">食材图标池</text><text class="cfg-s">逗号分隔 emoji；食材新增/编辑时从这里选（与大类图标池独立）</text></view></view>
-              <textarea class="pool" v-model="ingPool" @blur="setIngPool" />
-              <view class="pool-preview">预览：<text v-for="ic in ingIcons" :key="ic" class="p-ic">{{ ic }}</text></view>
-            </view>
-            <view class="cfg-row cfg-col">
-              <view class="cfg-head"><text class="cfg-ic">🗂️</text><view class="cfg-c"><text class="cfg-t">大类图标池</text><text class="cfg-s">逗号分隔 emoji；食材列表里大类分组/食材 fallback 用</text></view></view>
-              <textarea class="pool" v-model="catPool" @blur="setCatPool" />
-              <view class="pool-preview">预览：<text v-for="ic in catIcons" :key="ic" class="p-ic">{{ ic }}</text></view>
-            </view>
-            <view class="cfg-row cfg-col">
-              <view class="cfg-head"><text class="cfg-ic">🍲</text><view class="cfg-c"><text class="cfg-t">菜谱图标池</text><text class="cfg-s">逗号分隔 emoji，参考菜谱 / 用户菜谱录入时从这里选</text></view></view>
-              <textarea class="pool" v-model="recipePool" @blur="setRecipePool" />
-              <view class="pool-preview">预览：<text v-for="ic in recipeIcons" :key="ic" class="p-ic">{{ ic }}</text></view>
-            </view>
-            <view class="cfg-row cfg-col">
-              <view class="cfg-head"><text class="cfg-ic">🏪</text><view class="cfg-c"><text class="cfg-t">餐厅图标池</text><text class="cfg-s">逗号分隔 emoji，餐厅收藏录入时从这里选</text></view></view>
-              <textarea class="pool" v-model="shopPool" @blur="setShopPool" />
-              <view class="pool-preview">预览：<text v-for="ic in shopIcons" :key="ic" class="p-ic">{{ ic }}</text></view>
-            </view>
-            <view class="cfg-row cfg-col">
-              <view class="cfg-head"><text class="cfg-ic">🎨</text><view class="cfg-c"><text class="cfg-t">封面渐变池</text><text class="cfg-s">| 分隔 linear-gradient；菜谱封面背景预设</text></view></view>
-              <textarea class="pool grad-pool" v-model="gradPool" @blur="setGradPool" />
-              <view class="pool-preview">预览：<view v-for="(g,i) in grads" :key="i" class="p-grad" :style="{ background: g }"></view></view>
-            </view>
-
-            <!-- 邮箱 SMTP 配置 -->
-            <view class="cfg-row cfg-col">
-              <view class="cfg-head"><text class="cfg-ic">📧</text><view class="cfg-c"><text class="cfg-t">邮箱 SMTP 配置</text><text class="cfg-s">QQ/163 邮箱设置里的「授权码」填 smtp_pass；保存后立即生效；未配置时验证码降级为后端日志打印</text></view></view>
-              <view class="smtp-grid">
-                <view class="smtp-field">
-                  <text class="smtp-label">Host</text>
-                  <input class="num w200" :value="smtpHost" @blur="setCfg('smtp_host', $event.target.value)" placeholder="smtp.qq.com" />
-                </view>
-                <view class="smtp-field">
-                  <text class="smtp-label">Port</text>
-                  <input class="num w100" :value="smtpPort" @blur="setCfg('smtp_port', $event.target.value)" placeholder="465" />
-                </view>
-                <view class="smtp-field">
-                  <text class="smtp-label">User</text>
-                  <input class="num w240" :value="smtpUser" @blur="setCfg('smtp_user', $event.target.value)" placeholder="eatwhat@qq.com" />
-                </view>
-                <view class="smtp-field">
-                  <text class="smtp-label">Pass</text>
-                  <input class="num w240" :value="smtpPass" type="password" @blur="setCfg('smtp_pass', $event.target.value)" placeholder="QQ/163 授权码（非邮箱密码）" />
-                </view>
-                <view class="smtp-field">
-                  <text class="smtp-label">From</text>
-                  <input class="num w200" :value="smtpFrom" @blur="setCfg('smtp_from', $event.target.value)" placeholder="吃啥好呀" />
-                </view>
-                <view class="smtp-field">
-                  <text class="smtp-label">有效期（分钟）</text>
-                  <input class="num w120" type="number" :value="otpExpire" @blur="setCfg('otp_expire_min', $event.target.value)" />
-                </view>
-              </view>
-              <view class="cfg-row mt12">
-                <text class="cfg-ic">🔑</text>
-                <view class="cfg-c"><text class="cfg-t">JWT 签名密钥</text><text class="cfg-s">务必修改！否则开发期占位码上线会有安全风险</text></view>
-                <input class="num w300" :value="jwtSecret" @blur="setCfg('jwt_secret', $event.target.value)" />
-              </view>
-              <view class="cfg-row">
-                <text class="cfg-ic">💬</text>
-                <view class="cfg-c"><text class="cfg-t">微信 AppID / AppSecret</text><text class="cfg-s">个人开发者也能申请；填好后小程序登录会走真实 openid 而非 mock</text></view>
-                <view class="cfg-vert">
-                  <input class="num w220" :value="mpAppid" @blur="setCfg('mp_appid', $event.target.value)" placeholder="wx..." />
-                  <input class="num w220 mt6" :value="mpSecret" type="password" @blur="setCfg('mp_secret', $event.target.value)" placeholder="AppSecret（不是邮箱密码）" />
-                </view>
-              </view>
-            </view>
-          </view>
-        </template>
       </view>
     </view>
 
@@ -325,6 +235,8 @@
 
 <script>
 import { tipApi, recipeApi, ingredientApi, catApi, configApi, adminApi } from '@/api'
+// request 仅用于取管理台令牌的存储键常量（ADMIN_TOKEN_KEY）
+import request from '@/utils/request'
 
 const DEFAULT_GRAD = 'linear-gradient(135deg,#4b3fe3,#8b5cf6)'
 
@@ -338,25 +250,22 @@ export default {
         { k: 'ref', ic: '📚', t: '参考菜谱' },
         { k: 'cat', ic: '🗂️', t: '食材大类' },
         { k: 'ing', ic: '🧺', t: '食材库' },
-        { k: 'config', ic: '⚙️', t: '系统配置' }
+        // 系统配置已拆为独立页（系统级参数不与业务数据混排），带 url 的菜单项走页面跳转
+        { k: 'config', ic: '⚙️', t: '系统配置', url: '/pages/admin-config/admin-config' }
       ],
       DEFAULT_GRAD,
       sec: 'stats', curName: '', isAdmin: false,
       // 登录
-      loginCode: '', passcode: '',
+      loginCode: '',
       // 统计（仅公共资源计数）
       stats: { cards: {} },
       // 各列表数据
       tips: [], refs: [], cats: [], ingredients: [], users: [],
-      audit: true, expiry: 3,
+      // 图标池只读缓存：仅用于录入表单的候选图标点选（编辑入口在「系统配置」独立页）
       catIcons: [], catPool: '',
       ingIcons: [], ingPool: '',
       recipeIcons: [], recipePool: '',
-      shopIcons: [], shopPool: '',
       gradPool: '',
-      // 邮箱 SMTP + JWT + 微信 AppID 配置
-      smtpHost: '', smtpPort: '465', smtpUser: '', smtpPass: '', smtpFrom: '',
-      otpExpire: '10', jwtSecret: '', mpAppid: '', mpSecret: '',
       // 搜索 / 筛选 / 分页
       tipQ: '', tipSt: 'all', tipLimit: 20, tipSts: [
         { k: 'all', t: '全部' }, { k: 'pending', t: '待审核' }, { k: 'approved', t: '已公开' }, { k: 'rejected', t: '未通过' }
@@ -419,7 +328,11 @@ export default {
   },
   onShow() {
     this.curName = uni.getStorageSync('eat_user') || '我'
-    this.isAdmin = uni.getStorageSync('eat_admin') === '1'
+    // 收紧写接口后：管理台必须持有有效令牌才能写。
+    // 旧会话可能只有 eat_admin 标记、没有令牌 → 视为未登录，强制重新输口令，避免后续写操作全部 401。
+    const tok = uni.getStorageSync(request.ADMIN_TOKEN_KEY)
+    this.isAdmin = uni.getStorageSync('eat_admin') === '1' && !!tok
+    if (!this.isAdmin) uni.removeStorageSync('eat_admin')
     if (this.isAdmin) this.loadAll()
   },
   methods: {
@@ -429,13 +342,20 @@ export default {
       return (c && c.icon) || '🥗'
     },
     back() { uni.navigateBack() },
+    // 左侧菜单：带 url 的项跳独立页，其余切换右侧内容区
+    onNav(m) {
+      if (m.url) return uni.navigateTo({ url: m.url })
+      this.sec = m.k
+    },
     // —— 登录门 ——
     async doLogin() {
       const code = (this.loginCode || '').trim()
       if (!code) return uni.showToast({ title: '请输入口令', icon: 'none' })
       try {
-        await adminApi.login(code)
+        // 后端校验口令后签发管理员令牌；写接口靠它通过 get_write_user（与用户端 eat_token 相互独立）
+        const r = await adminApi.login(code)
         uni.setStorageSync('eat_admin', '1')
+        uni.setStorageSync(request.ADMIN_TOKEN_KEY, r.token || '')
         this.isAdmin = true
         uni.showToast({ title: '登录成功', icon: 'success' })
         this.loadAll()
@@ -448,7 +368,7 @@ export default {
       try {
         // 食材库 / 大类双层模型：管理端只读公共层（scope=public），用户端合并自己的补录
         const [tips, refs, cats, ingredients, users, st] = await Promise.all([
-          tipApi.list(this.curName, true),
+          tipApi.list(true),
           recipeApi.list('admin'),
           catApi.list(1, true),
           ingredientApi.list(1, true),
@@ -462,35 +382,18 @@ export default {
         this.ingredients = ingredients.map((x) => ({ id: x.id, name: x.name, cat: x.cat || '其他', icon: x.icon || '' }))
         this.users = users
         this.stats = st || this.stats
-        // 配置
-        const [a, e, p, cp, ip, rp, sp, gp] = await Promise.all([configApi.get('audit_enabled'), configApi.get('expiry_threshold_days'), configApi.get('admin_passcode'), configApi.get('cat_icon_pool'), configApi.get('ingredient_icon_pool'), configApi.get('recipe_emoji_pool'), configApi.get('shop_icon_pool'), configApi.get('cover_grad_pool')])
-        this.audit = (a.value === '1' || a.value === true || a.value === 1)
-        this.expiry = Number(e.value)
-        this.passcode = p.value
+        // 图标池：仅读取用于录入表单的候选图标（编辑入口在「系统配置」独立页）
+        const [cp, ip, rp, gp] = await Promise.all([
+          configApi.get('cat_icon_pool'), configApi.get('ingredient_icon_pool'),
+          configApi.get('recipe_emoji_pool'), configApi.get('cover_grad_pool'),
+        ])
         this.catPool = cp.value || ''
         this.catIcons = (cp.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean)
         this.ingPool = ip.value || ''
         this.ingIcons = (ip.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean)
         this.recipePool = rp.value || ''
         this.recipeIcons = (rp.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean)
-        this.shopPool = sp.value || ''
-        this.shopIcons = (sp.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean)
         this.gradPool = gp.value || ''
-        // SMTP + JWT + 微信 AppID 配置
-        const [sh, spt, su, sd, sf, oe, js, ma, msec] = await Promise.all([
-          configApi.get('smtp_host'), configApi.get('smtp_port'), configApi.get('smtp_user'),
-          configApi.get('smtp_pass'), configApi.get('smtp_from'), configApi.get('otp_expire_min'),
-          configApi.get('jwt_secret'), configApi.get('mp_appid'), configApi.get('mp_secret'),
-        ])
-        this.smtpHost = sh.value || ''
-        this.smtpPort = spt.value || '465'
-        this.smtpUser = su.value || ''
-        this.smtpPass = sd.value || ''
-        this.smtpFrom = sf.value || ''
-        this.otpExpire = oe.value || '10'
-        this.jwtSecret = js.value || ''
-        this.mpAppid = ma.value || ''
-        this.mpSecret = msec.value || ''
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
     // —— 用户管理 ——
@@ -551,59 +454,6 @@ export default {
     delCat(c) {
       uni.showModal({ title: '删除大类', content: `删除「${c.name}」？该大类下食材/冰箱项退回「其他」。`, confirmText: '删除', confirmColor: '#e64340',
         success: (res) => { if (res.confirm) catApi.del(c.id).then(this.loadAll) } })
-    },
-    // —— 配置 ——
-    setAudit(e) { this.audit = e.detail.value; configApi.set('audit_enabled', this.audit ? '1' : '0') },
-    // 通用配置项保存（SMTP / JWT / AppID 等所有 configs 表 key）
-    setCfg(key, val) { configApi.set(key, String(val != null ? val : '')) },
-    setExpiry(e) {
-      const v = Number(e.detail.value)
-      if (!isNaN(v) && v > 0) { this.expiry = v; configApi.set('expiry_threshold_days', String(v)) }
-    },
-    setPasscode(e) {
-      const v = (e.detail.value || '').trim()
-      if (!v) return
-      this.passcode = v
-      configApi.set('admin_passcode', v)
-    },
-    setIngPool() {
-      const v = (this.ingPool || '').trim()
-      const list = v.split(/[,，]/).map(s => s.trim()).filter(Boolean)
-      if (!list.length) return uni.showToast({ title: '至少留一个 emoji', icon: 'none' })
-      this.ingIcons = list
-      configApi.set('ingredient_icon_pool', v)
-      uni.showToast({ title: '已保存', icon: 'success' })
-    },
-    setCatPool() {
-      const v = (this.catPool || '').trim()
-      const list = v.split(/[,，]/).map(s => s.trim()).filter(Boolean)
-      if (!list.length) return uni.showToast({ title: '至少留一个 emoji', icon: 'none' })
-      this.catIcons = list
-      configApi.set('cat_icon_pool', v)
-      uni.showToast({ title: '已保存', icon: 'success' })
-    },
-    setRecipePool() {
-      const v = (this.recipePool || '').trim()
-      const list = v.split(/[,，]/).map(s => s.trim()).filter(Boolean)
-      if (!list.length) return uni.showToast({ title: '至少留一个 emoji', icon: 'none' })
-      this.recipeIcons = list
-      configApi.set('recipe_emoji_pool', v)
-      uni.showToast({ title: '已保存', icon: 'success' })
-    },
-    setShopPool() {
-      const v = (this.shopPool || '').trim()
-      const list = v.split(/[,，]/).map(s => s.trim()).filter(Boolean)
-      if (!list.length) return uni.showToast({ title: '至少留一个 emoji', icon: 'none' })
-      this.shopIcons = list
-      configApi.set('shop_icon_pool', v)
-      uni.showToast({ title: '已保存', icon: 'success' })
-    },
-    setGradPool() {
-      const v = (this.gradPool || '').trim()
-      const list = v.split('|').map(s => s.trim()).filter(Boolean)
-      if (!list.length) return uni.showToast({ title: '至少留一个渐变', icon: 'none' })
-      configApi.set('cover_grad_pool', v)
-      uni.showToast({ title: '已保存', icon: 'success' })
     },
     // —— 弹窗 ——
     openModal(mode) {
@@ -775,23 +625,6 @@ export default {
 /* 通用 名称/描述 双行（用户行复用） */
 .sn { font-size: 14px; font-weight: 700; }
 .sm { font-size: 12px; color: #888; }
-/* config */
-.cfg { padding: 8px 20px; max-width: 560px; }
-.cfg-row { display: flex; align-items: center; gap: 16px; padding: 20px 0; border-bottom: 1px solid #f0f0f2; }
-.cfg-row:last-child { border-bottom: none; }
-.cfg-ic { font-size: 26px; }
-.cfg-c { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.cfg-t { font-size: 14px; font-weight: 600; }
-.cfg-s { font-size: 12px; color: #888; }
-.num { border: 1px solid #e5e6eb; border-radius: 8px; height: 34px; width: 96px; text-align: right; padding: 0 10px; box-sizing: border-box; font-size: 13px; }
-.w160 { width: 160px; text-align: left; letter-spacing: 2px; }
-.cfg-col { flex-direction: column; align-items: stretch; gap: 10px; padding: 16px 0; }
-.cfg-head { display: flex; align-items: center; gap: 12px; }
-.pool { border: 1px solid #e5e6eb; border-radius: 8px; padding: 8px 12px; font-size: 13px; min-height: 44px; box-sizing: border-box; resize: vertical; line-height: 1.5; }
-.pool-preview { font-size: 13px; color: #888; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.p-ic { margin-right: 6px; font-size: 18px; }
-.p-grad { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #e0e0e0; display: inline-block; }
-.grad-pool { font-family: monospace; font-size: 11px; }
 
 /* 弹窗 */
 .mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 24px; }

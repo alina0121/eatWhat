@@ -14,7 +14,7 @@ from sqlite3 import Connection
 from typing import Optional
 
 from app.db import get_db, row_to_dict
-from .auth import get_optional_user
+from .auth import get_optional_user, get_write_user
 
 router = APIRouter(prefix="/ingredients", tags=["ingredients"])
 
@@ -77,7 +77,7 @@ def _check_name_private(conn: Connection, name: str, user_id: int, exclude_id: O
 
 @router.post("")
 def create_ingredient(body: IngredientIn,
-                      user: int = Depends(get_optional_user),
+                      user: int = Depends(get_write_user),
                       public: bool = Query(False, description="管理员录入公共层"),
                       conn: Connection = Depends(get_db)):
     """新增食材。public=False 为用户补录（scope=user），public=True 为管理员录入公共层。"""
@@ -108,7 +108,7 @@ def create_ingredient(body: IngredientIn,
 
 @router.put("/{iid}")
 def update_ingredient(iid: int, body: IngredientIn,
-                      user: int = Depends(get_optional_user),
+                      user: int = Depends(get_write_user),
                       admin: bool = Query(False, description="管理员跳过所有权校验"),
                       conn: Connection = Depends(get_db)):
     """编辑食材。scope='public' 的改了名字要同步检查是否跟公共/私有重名。"""
@@ -139,7 +139,7 @@ def update_ingredient(iid: int, body: IngredientIn,
 
 @router.delete("/{iid}")
 def delete_ingredient(iid: int,
-                      user: int = Depends(get_optional_user),
+                      user: int = Depends(get_write_user),
                       admin: bool = Query(False, description="管理员可删公共层"),
                       conn: Connection = Depends(get_db)):
     """删除食材。公共层只有 admin=True 可删；私有层只能删自己的。"""

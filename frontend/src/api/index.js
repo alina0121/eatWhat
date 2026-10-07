@@ -2,17 +2,18 @@
 // 后端路由清单（FastAPI）：
 //   /recipes  /shops  /candidates  /fridge  /diners  /tips  /records  /weights  /configs
 // 派生数据（临期状态/计时elapsed/统计）由后端实时现算，前端只消费结果，不落库。
-// 多用户隔离：食材库 / 冰箱 / 待采购 / 候选已加 user_id，默认 user=1；
-//   当前用户存在 localStorage.curUser，管理端全量查询显式传 all_users/admin 参数。
+// 多用户隔离：身份完全由请求头 Authorization Bearer token 决定（后端 get_optional_user 解析）；
+//   下面 URL 上的 ?user=N 是历史遗留，后端已不再读取，保留只为不改动各页调用点。
+//   未登录（无 token）时后端按 user=0 游客处理，各页天然空态，不再回退 1 号账号。
 import req from '@/utils/request'
 
-/** 当前用户 id（localStorage 默认 1） */
+/** 当前用户 id（localStorage 无值时为 0=未登录；0 不代表任何真实账号） */
 export const getCurUser = () => {
   try {
     const v = uni.getStorageSync('curUser')
     const n = Number(v)
-    return Number.isFinite(n) && n > 0 ? n : 1
-  } catch (e) { return 1 }
+    return Number.isFinite(n) && n > 0 ? n : 0
+  } catch (e) { return 0 }
 }
 
 export const recipeApi = {
@@ -100,12 +101,12 @@ export const tasteApi = {
 }
 
 export const tipApi = {
-  // viewer=当前用户名；admin=true 时看全部（管理员审核演示）
-  list: (viewer = '', admin = false) =>
-    req.get(`/tips?viewer=${encodeURIComponent(viewer)}&admin=${admin ? 1 : 0}`),
+  // 归属由后端按 token 判定：普通列表自动只带「自己的 + 他人已公开通过的」
+  // admin=true 时返回全部（含他人未审核/私密），供管理端审核用
+  list: (admin = false) => req.get(`/tips?admin=${admin ? 1 : 0}`),
   create: (data) => req.post('/tips', data),
   update: (id, data) => req.put(`/tips/${id}`, data),
-  del: (id, author) => req.del(`/tips/${id}?author=${encodeURIComponent(author)}`),
+  del: (id) => req.del(`/tips/${id}`),
   approve: (id) => req.post(`/tips/${id}/approve`),
   reject: (id) => req.post(`/tips/${id}/reject`)
 }

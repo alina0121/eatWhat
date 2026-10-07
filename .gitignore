@@ -13,7 +13,9 @@ venv/
 
 # 数据库（含本地数据，不入库）
 eatwhat.db
+# SQLite 运行时产生的 WAL / SHM 临时文件
+backend/eatwhat.db-*
 
 # 编辑器与本机环境
 .DS_Store
-*.localbackend/eatwhat.db-*
+*.local

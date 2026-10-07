@@ -18,6 +18,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import time
 import urllib.parse
 import urllib.request
@@ -29,6 +30,8 @@ from pydantic import BaseModel
 from ..db import get_conn
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+logger = logging.getLogger(__name__)
 
 # token 有效期 30 天
 TOKEN_TTL = 30 * 24 * 3600
@@ -91,13 +94,59 @@ async def get_current_user(request: Request, conn=Depends(get_conn)) -> int:
 
 
 async def get_optional_user(request: Request, conn=Depends(get_conn)) -> int:
-    """宽松鉴权：有 token 就解，没有就返回默认 user_id=1（H5 / 管理端还没接登录时用）。"""
+    """宽松鉴权：有 token 就解出真实 user_id，没有则返回 0。
+
+    0 = 未登录游客，不是任何真实账号：业务表里不存在 user_id=0 的历史数据，
+    所以未登录时各页天然是空态。这里绝不能回退到 1 号 —— 那会把 1 号账号
+    （管理员）的冰箱/口味标签等私人数据端给未登录的人看。
+    """
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         uid = verify_token(conn, auth[7:])
         if uid is not None:
             return uid
-    return 1
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# 写操作鉴权：未登录禁止新增 / 修改 / 删除
+# ---------------------------------------------------------------------------
+# PC 管理台没有用户账号（靠口令进入），与用户端复用同一套写接口。
+# 这里让管理台登录后额外带一个管理员令牌 header，与用户 token 并行不悖：
+# 用户端登录态完全不受影响，管理台也能继续管理公共资源。
+ADMIN_TOKEN_HEADER = "X-Admin-Token"
+
+
+def _admin_uid(request: Request, conn) -> Optional[int]:
+    """校验管理台令牌：有效且该用户 role=admin 才认。否则返回 None。"""
+    tok = request.headers.get(ADMIN_TOKEN_HEADER, "")
+    if not tok:
+        return None
+    uid = verify_token(conn, tok)
+    if uid is None:
+        return None
+    row = conn.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()
+    if row and row["role"] == "admin":
+        return uid
+    return None
+
+
+async def get_write_user(request: Request, conn=Depends(get_conn)) -> int:
+    """写操作依赖：必须已登录（用户 token），或持有效管理台令牌。
+
+    未登录（既没有有效用户 token，也不是管理台）一律 401 —— 未登录只能浏览
+    公开内容（参考菜谱 / 已公开技巧等），不能新增 / 修改 / 删除。
+    读接口继续用 get_optional_user（游客 user_id=0，各页天然空态）。
+    """
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        uid = verify_token(conn, auth[7:])
+        if uid is not None and uid > 0:
+            return uid
+    auid = _admin_uid(request, conn)
+    if auid is not None:
+        return auid
+    raise HTTPException(status_code=401, detail="请先登录后再操作")
 
 
 # ---------------------------------------------------------------------------
@@ -260,16 +309,43 @@ def _validate_email(email: str) -> bool:
     return bool(email and _EMAIL_RE.match(email.strip()))
 
 
-def _consume_otp(conn, email: str, code: str, purpose: str) -> bool:
-    """校验验证码 + 标记已用。正确返回 True，否则 False。"""
+def _consume_otp(conn, email: str, code: str, purpose: str):
+    """校验验证码 + 标记已用。返回 (是否通过, 失败原因)。
+
+    失败原因必须区分「已过期 / 已被用 / 填错了」：
+    只回一句「验证码错误或已过期」时，用户根本分不清是自己手输错了还是邮件来晚了，
+    本次线上问题就是这么被误判成「一收到就过期」的。
+    """
+    now = int(time.time())
     row = conn.execute(
         "SELECT * FROM email_otps WHERE email=? AND purpose=? AND code=? AND used=0 AND expired_at>?",
-        (email, purpose, code, int(time.time())),
+        (email, purpose, code, now),
     ).fetchone()
-    if not row:
-        return False
-    conn.execute("UPDATE email_otps SET used=1 WHERE id=?", (row["id"],))
-    return True
+    if row:
+        conn.execute("UPDATE email_otps SET used=1 WHERE id=?", (row["id"],))
+        return True, ""
+
+    # 未命中 → 逐层定位原因，给用户一句能照做的提示
+    hit = conn.execute(
+        "SELECT used, expired_at FROM email_otps WHERE email=? AND purpose=? AND code=? "
+        "ORDER BY id DESC LIMIT 1",
+        (email, purpose, code),
+    ).fetchone()
+    if hit:
+        if hit["used"]:
+            return False, "该验证码已经用过了，请重新获取"
+        return False, "验证码已过期，请点击「获取验证码」拿新的"
+
+    # 这个码在库里不存在 → 看该邮箱最近一次发的码是否已过期
+    latest = conn.execute(
+        "SELECT expired_at FROM email_otps WHERE email=? AND purpose=? ORDER BY id DESC LIMIT 1",
+        (email, purpose),
+    ).fetchone()
+    if latest is None:
+        return False, "请先点击「获取验证码」"
+    if latest["expired_at"] <= now:
+        return False, "验证码已过期，请点击「获取验证码」拿新的"
+    return False, "验证码不正确，请核对邮件里的 6 位数字"
 
 
 # ---------------------------------------------------------------------------
@@ -347,8 +423,13 @@ def login_email(body: EmailLoginBody, conn=Depends(get_conn)):
     if not body.code or len(body.code) != 6:
         raise HTTPException(400, "请输入 6 位验证码")
 
-    if not _consume_otp(conn, email, body.code, "login"):
-        raise HTTPException(400, "验证码错误或已过期")
+    ok, reason = _consume_otp(conn, email, body.code, "login")
+    if not ok:
+        # 记下用户实际提交的邮箱+验证码，排查「收到码却说无效」时一眼能看出差在哪
+        logger.warning(
+            f"[auth] 登录验证码校验失败 email={email} code={body.code} reason={reason}"
+        )
+        raise HTTPException(400, reason)
 
     # 找/建用户
     now = int(time.time())
@@ -406,8 +487,12 @@ def bind_email(body: BindEmailBody, uid: int = Depends(get_current_user), conn=D
         raise HTTPException(409, "该邮箱已被其他账号绑定")
 
     # 验证验证码（purpose=bind）
-    if not _consume_otp(conn, email, body.code, "bind"):
-        raise HTTPException(400, "验证码错误或已过期")
+    ok, reason = _consume_otp(conn, email, body.code, "bind")
+    if not ok:
+        logger.warning(
+            f"[auth] 绑定邮箱验证码校验失败 uid={uid} email={email} code={body.code} reason={reason}"
+        )
+        raise HTTPException(400, reason)
 
     conn.execute("UPDATE users SET email=? WHERE id=?", (email, uid))
     conn.commit()
@@ -431,12 +516,11 @@ def unbind_email(uid: int = Depends(get_current_user), conn=Depends(get_conn)):
 # ---------------------------------------------------------------------------
 # 5. 注销账户（物理删除用户所有数据 + 自身）
 # ---------------------------------------------------------------------------
-# 所有带 user_id 的表，注销时级联清理
+# 所有带 user_id 的业务表，注销时级联清理（表名必须与 db.py 实际建表一致）
 _CASCADE_TABLES = [
-    "recipes", "fridge_stock", "fridge_purchase",
+    "recipes", "shops", "diners", "records", "weights", "tips",
+    "fridge_items", "purchase", "eat_inbox",
     "categories", "ingredients", "taste_tags",
-    "diners", "records", "weights", "tips",
-    "candidates",
 ]
 
 
@@ -452,7 +536,13 @@ def delete_my_account(uid: int = Depends(get_current_user), conn=Depends(get_con
     if user and user["role"] == "admin":
         raise HTTPException(403, "管理员账户不支持自助注销")
 
-    # 1. 级联删除所有业务表数据
+    # 1. 先清该用户候选挂的计时（tracks 只有 inbox_id，删 eat_inbox 前先摘掉）
+    conn.execute(
+        "DELETE FROM tracks WHERE inbox_id IN (SELECT id FROM eat_inbox WHERE user_id=?)",
+        (uid,),
+    )
+
+    # 2. 级联删除所有业务表数据
     deleted_counts = {}
     for table in _CASCADE_TABLES:
         try:
@@ -463,14 +553,6 @@ def delete_my_account(uid: int = Depends(get_current_user), conn=Depends(get_con
             # 表不存在或没 user_id 列 → 跳过
             pass
 
-    # 2. 删除候选关联（candidates 也有 user_id）
-    try:
-        cur = conn.execute("DELETE FROM candidates WHERE user_id=?", (uid,))
-        if cur.rowcount:
-            deleted_counts["candidates"] = cur.rowcount
-    except Exception:
-        pass
-
     # 3. 删 users 记录
     conn.execute("DELETE FROM users WHERE id=?", (uid,))
     conn.commit()
@@ -480,4 +562,4 @@ def delete_my_account(uid: int = Depends(get_current_user), conn=Depends(get_con
 
 
 # 更新 __all__ 导出
-__all__ = ["get_current_user", "get_optional_user", "router"]
+__all__ = ["get_current_user", "get_optional_user", "get_write_user", "router"]

@@ -16,6 +16,7 @@ from sqlite3 import Connection
 
 from app.db import get_db, row_to_dict
 from app.routers.configs import get_config
+from app.routers.auth import sign_token, get_write_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -36,11 +37,19 @@ class UserPatch(BaseModel):
 
 @router.post("/login")
 def admin_login(body: LoginIn, conn: Connection = Depends(get_db)):
-    """校验管理端口令。通过返回 ok，前端存会话标记解锁管理台。"""
+    """校验管理端口令，并签发一个「管理台令牌」。
+
+    管理台与用户端复用同一套写接口；写接口现在要求登录，管理台靠这个令牌
+    （放在 X-Admin-Token header 里）通过鉴权，用户端登录态不受任何影响。
+    """
     pwd = get_config(conn, "admin_passcode", "123456")
     if body.code != pwd:
         raise HTTPException(401, "口令错误")
-    return {"ok": True}
+    row = conn.execute(
+        "SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1"
+    ).fetchone()
+    admin_uid = row["id"] if row else 1
+    return {"ok": True, "token": sign_token(conn, admin_uid), "user_id": admin_uid}
 
 
 @router.get("/stats")
@@ -76,7 +85,7 @@ def list_users(conn: Connection = Depends(get_db)):
 
 
 @router.post("/users")
-def create_user(body: UserIn, conn: Connection = Depends(get_db)):
+def create_user(body: UserIn, conn: Connection = Depends(get_db), _admin: int = Depends(get_write_user)):
     """新增用户。"""
     name = body.name.strip()
     if not name:
@@ -90,7 +99,8 @@ def create_user(body: UserIn, conn: Connection = Depends(get_db)):
 
 
 @router.put("/users/{uid}")
-def update_user(uid: int, body: UserPatch, conn: Connection = Depends(get_db)):
+def update_user(uid: int, body: UserPatch, conn: Connection = Depends(get_db),
+                _admin: int = Depends(get_write_user)):
     """改名 / 切换角色。"""
     _get_user(conn, uid)
     data = body.model_dump(exclude_none=True)
@@ -111,7 +121,8 @@ def update_user(uid: int, body: UserPatch, conn: Connection = Depends(get_db)):
 
 
 @router.delete("/users/{uid}")
-def delete_user(uid: int, conn: Connection = Depends(get_db)):
+def delete_user(uid: int, conn: Connection = Depends(get_db),
+                _admin: int = Depends(get_write_user)):
     """删除用户（保留演示管理员 id=1，不可删）。"""
     if uid == 1:
         raise HTTPException(400, "内置管理员不可删除")

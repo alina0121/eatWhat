@@ -10,6 +10,7 @@ import smtplib
 import time
 from email.mime.text import MIMEText
 from email.header import Header
+from email.utils import formataddr
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,13 @@ def send_otp_email(conn, to_email: str, code: str, purpose: str = "login") -> bo
     try:
         msg = MIMEText(body, "plain", "utf-8")
         from_name = cfg.get("smtp_from") or cfg.get("smtp_user", "")
-        msg["From"] = f"{Header(from_name, 'utf-8')} <{cfg['smtp_user']}>"
+        # From 必须用 formataddr 拼装。
+        # 踩过的坑：写成 f"{Header(name, 'utf-8')} <{addr}>" 时，Header.__str__ 返回的是
+        # 「原文」而不是 encoded-word，于是这个带中文的整串交给 policy 序列化时会被整体
+        # base64 成一个 encoded-word，把 <地址> 也吞进去（From: =?utf-8?b?...?=），
+        # 地址结构被破坏 → QQ 回 550 The "From" header is missing or invalid。
+        # formataddr 只对显示名做 RFC2047 编码，地址保持裸露，格式才合法。
+        msg["From"] = formataddr((from_name, cfg["smtp_user"]))
         msg["To"] = to_email
         msg["Subject"] = Header(f"【吃啥好呀】验证码 {code}", "utf-8")
 

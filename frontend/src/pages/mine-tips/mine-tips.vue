@@ -37,8 +37,8 @@
             <text class="tcat">{{ t.category || '未分类' }}</text>
             <text class="tauthor">{{ t.author }}</text>
           </view>
-          <!-- 自己的内容可编辑/删除 -->
-          <view class="tops" v-if="t.author === curName">
+          <!-- 自己的内容可编辑/删除（按归属 user_id 判定，不靠作者名） -->
+          <view class="tops" v-if="isMine(t)">
             <text class="op" @tap="openForm(t)">编辑</text>
             <text class="op danger" @tap="del(t)">✕ 删除</text>
           </view>
@@ -51,26 +51,29 @@
 </template>
 
 <script>
-import { tipApi } from '@/api'
+import { tipApi, getCurUser } from '@/api'
 
 export default {
   data() {
     return {
-      curName: '',
+      curName: '', curUserId: 0,
       list: [], showForm: false, editingId: null,
       form: { title: '', content: '', category: '', public: 1 }
     }
   },
   onShow() {
     this.curName = uni.getStorageSync('eat_user') || '我'
+    this.curUserId = getCurUser()
     this.load()
   },
   methods: {
     back() { uni.navigateBack() },
+    // 是否自己创建的：以后端返回的 user_id 与当前登录用户比对
+    isMine(t) { return !!this.curUserId && Number(t.user_id) === this.curUserId },
     async load() {
       try {
         // 后端返回 cat / pub，前端内部用 category / public；此处做字段名对齐
-        const raw = await tipApi.list(this.curName, false)
+        const raw = await tipApi.list(false)
         this.list = raw.map((t) => ({ ...t, category: t.cat || '', public: t.pub ? 1 : 0 }))
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
@@ -81,14 +84,14 @@ export default {
       this.form = t ? { title: t.title, content: t.content, category: t.category || '', public: t.public } : { title: '', content: '', category: '', public: 1 }
     },
     async saveForm() {
-      // 后端期望 cat / pub，不是 category / public
+      // 后端期望 cat / pub，不是 category / public；author 仅作展示名
       const d = { title: this.form.title, content: this.form.content, cat: this.form.category, pub: !!this.form.public }
       if (this.editingId) await tipApi.update(this.editingId, { ...d, author: this.curName })
       else await tipApi.create({ ...d, author: this.curName })
       this.showForm = false
       this.load()
     },
-    async del(t) { await tipApi.del(t.id, this.curName); this.load() }
+    async del(t) { await tipApi.del(t.id); this.load() }
   }
 }
 </script>

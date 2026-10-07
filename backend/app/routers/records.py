@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlite3 import Connection
 
 from app.db import get_db, row_to_dict
+from app.routers.auth import get_optional_user, get_write_user
 
 router = APIRouter(prefix="/records", tags=["records"])
 
@@ -20,9 +21,10 @@ class RecordIn(BaseModel):
     type: str = "cook" # cook|out|delivery
 
 
-def _get(conn: Connection, rid: int):
+def _get(conn: Connection, rid: int, user: int):
+    """取记录并校验归属：饮食记录按人隔离。"""
     row = conn.execute("SELECT * FROM records WHERE id=?", (rid,)).fetchone()
-    if not row:
+    if not row or row["user_id"] != user:
         raise HTTPException(404, "记录不存在")
     return row_to_dict(row)
 
@@ -32,25 +34,33 @@ def list_records(
     start: Optional[str] = None,
     end: Optional[str] = None,
     date: Optional[str] = None,
+    user: int = Depends(get_optional_user),
     conn: Connection = Depends(get_db),
 ):
-    """按日期范围或单日查询饮食记录。"""
+    """按日期范围或单日查询当前用户的饮食记录。未登录（user=0）为空。"""
     if date:
-        rows = conn.execute("SELECT * FROM records WHERE date=? ORDER BY id", (date,)).fetchall()
+        rows = conn.execute(
+            "SELECT * FROM records WHERE user_id=? AND date=? ORDER BY id", (user, date)
+        ).fetchall()
     elif start and end:
         rows = conn.execute(
-            "SELECT * FROM records WHERE date BETWEEN ? AND ? ORDER BY date, id",
-            (start, end),
+            "SELECT * FROM records WHERE user_id=? AND date BETWEEN ? AND ? ORDER BY date, id",
+            (user, start, end),
         ).fetchall()
     else:
-        rows = conn.execute("SELECT * FROM records ORDER BY date DESC, id").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM records WHERE user_id=? ORDER BY date DESC, id", (user,)
+        ).fetchall()
     return [row_to_dict(r) for r in rows]
 
 
 @router.get("/calendar")
-def calendar(conn: Connection = Depends(get_db)):
-    """按天聚合：返回 {date: [记录...]}，供日历展示。"""
-    rows = conn.execute("SELECT * FROM records ORDER BY date, id").fetchall()
+def calendar(user: int = Depends(get_optional_user),
+             conn: Connection = Depends(get_db)):
+    """按天聚合当前用户的记录：返回 {date: [记录...]}，供日历展示。"""
+    rows = conn.execute(
+        "SELECT * FROM records WHERE user_id=? ORDER BY date, id", (user,)
+    ).fetchall()
     agg = {}
     for r in rows:
         agg.setdefault(r["date"], []).append(row_to_dict(r))
@@ -58,18 +68,22 @@ def calendar(conn: Connection = Depends(get_db)):
 
 
 @router.post("")
-def create_record(body: RecordIn, conn: Connection = Depends(get_db)):
+def create_record(body: RecordIn,
+                  user: int = Depends(get_write_user),
+                  conn: Connection = Depends(get_db)):
     cur = conn.execute(
-        "INSERT INTO records(date,name,type) VALUES(?,?,?)",
-        (body.date, body.name, body.type),
+        "INSERT INTO records(user_id,date,name,type) VALUES(?,?,?,?)",
+        (user, body.date, body.name, body.type),
     )
     return {"id": cur.lastrowid, "ok": True}
 
 
 @router.put("/{rid}")
-def update_record(rid: int, body: RecordIn, conn: Connection = Depends(get_db)):
+def update_record(rid: int, body: RecordIn,
+                  user: int = Depends(get_write_user),
+                  conn: Connection = Depends(get_db)):
     """编辑记录：改名/改类型/改日期，原地更新。"""
-    _get(conn, rid)
+    _get(conn, rid, user)
     conn.execute(
         "UPDATE records SET date=?, name=?, type=? WHERE id=?",
         (body.date, body.name, body.type, rid),
@@ -78,7 +92,9 @@ def update_record(rid: int, body: RecordIn, conn: Connection = Depends(get_db)):
 
 
 @router.delete("/{rid}")
-def delete_record(rid: int, conn: Connection = Depends(get_db)):
-    _get(conn, rid)
+def delete_record(rid: int,
+                  user: int = Depends(get_write_user),
+                  conn: Connection = Depends(get_db)):
+    _get(conn, rid, user)
     conn.execute("DELETE FROM records WHERE id=?", (rid,))
     return {"id": rid, "ok": True}

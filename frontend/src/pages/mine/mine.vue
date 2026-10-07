@@ -11,16 +11,18 @@
     <scroll-view class="tab-scroll" scroll-y>
       <!-- 资料头 -->
       <view class="section">
-        <view class="pro">
+        <!-- 点整行打开「账号」弹窗：绑定/更换邮箱 + 退出登录 -->
+        <view class="pro" @tap="openAccount">
           <view class="ava"><text class="ava-em">{{ curName.slice(0, 1) }}</text></view>
           <view class="pro-c">
             <view class="pro-nm">
               <text class="pname">{{ curName }}</text>
-              <text class="u-role" v-if="isAdmin">管理员</text>
+              <!-- 仅当后端返回 role=admin 才显示；eat_admin 只是管理台口令会话标记，不代表账号身份 -->
+              <text class="u-role" v-if="userRole === 'admin'">管理员</text>
             </view>
             <text class="pmail">一人食 · 主打快手菜</text>
           </view>
-          <text class="newlink" @tap="switchUser">切换</text>
+          <text class="newlink">{{ isLogin ? '账号' : '去登录' }}</text>
         </view>
       </view>
 
@@ -106,8 +108,8 @@
         </view>
       </view>
 
-      <!-- 注销账户（危险区域） -->
-      <view class="section" v-if="!isAdmin">
+      <!-- 注销账户（危险区域；管理员账号不可自助注销，与后端拦截保持一致） -->
+      <view class="section" v-if="userRole !== 'admin'">
         <view class="danger-zone" @tap="confirmDelete">
           <text class="danger-ic">⚠️</text>
           <view class="danger-info">
@@ -170,6 +172,32 @@
       </view>
     </view>
 
+    <!-- 账号弹窗：点「我」的资料头打开。已登录 → 展示邮箱 + 绑定/更换邮箱 + 退出登录；未登录 → 引导去登录 -->
+    <view class="mask" v-if="accountDialog.show" @tap="accountDialog.show = false">
+      <view class="dialog" @tap.stop>
+        <text class="d-title">账号</text>
+        <template v-if="isLogin">
+          <view class="acc-row">
+            <text class="acc-lab">昵称</text>
+            <text class="acc-val">{{ curName }}</text>
+          </view>
+          <view class="acc-row">
+            <text class="acc-lab">邮箱</text>
+            <text class="acc-val">{{ userEmail || '未绑定' }}</text>
+          </view>
+        </template>
+        <text class="d-sub" v-else>还没登录 · 登录后菜谱 / 冰箱 / 干饭记录可跨端带走</text>
+        <view class="d-btns">
+          <button class="pbtn ghost" @tap="accountDialog.show = false">关闭</button>
+          <template v-if="isLogin">
+            <button class="pbtn ghost" @tap="fromAccountToEmail">{{ userEmail ? '更换邮箱' : '绑定邮箱' }}</button>
+            <button class="pbtn danger" @tap="doLogout">退出登录</button>
+          </template>
+          <button v-else class="pbtn" @tap="accountDialog.show = false; goLogin()">去登录</button>
+        </view>
+      </view>
+    </view>
+
     <!-- 注销确认弹窗（双确认：第一次警告，第二次输入"确认注销"） -->
     <view class="mask" v-if="deleteDialog.show" @tap="deleteDialog.step = 1">
       <view class="dialog" @tap.stop>
@@ -201,18 +229,18 @@ import request from '@/utils/request'
 
 export default {
   data() {
-    return { diners: [], curName: '', isAdmin: false, weekCount: 0, myRecipes: 0, shopCount: 0, isPc: false,
+    return { diners: [], curName: '', userRole: '', weekCount: 0, myRecipes: 0, shopCount: 0, isPc: false,
              allTags: [], tagSel: [],   // 口味标签池（来自 tasteApi）+ 当前选中
              form: { show: false, mode: '', title: '', val: '', hint: '', id: null },
-             // 邮箱绑定 / 注销相关
+             // 登录 / 邮箱绑定 / 账号弹窗 / 注销相关
              isLogin: false,
              userEmail: '', emailCd: 0, emailDialog: { show: false, email: '', code: '' },
+             accountDialog: { show: false },
              deleteDialog: { show: false, step: 1, val: '' }, }
   },
   async onShow() {
-    this.curName = uni.getStorageSync('eat_user') || '我'
-    // 管理员演示开关：本地标记（MVP）
-    this.isAdmin = uni.getStorageSync('eat_admin') === '1'
+    // 昵称占位：未登录时显示「未登录」，避免与任何真实账号混淆
+    this.curName = uni.getStorageSync('eat_user') || '未登录'
     // PC 管理端入口：仅桌面宽屏可见（>=1024px），移动端不显示
     // 小程序/App 无 window 对象，统一走 uni 的窗口信息 API（各端均支持）
     try {
@@ -253,10 +281,7 @@ export default {
         return !isNaN(d) && d >= start
       }).length
     },
-    // 三个入口统一走居中弹窗（mode: user 切换用户 / diner 新增成员 / tags 编辑口味）
-    switchUser() {
-      this.form = { show: true, mode: 'user', title: '切换用户', val: this.curName, hint: '输入名字', id: null }
-    },
+    // 两个入口统一走居中弹窗（mode: diner 新增成员 / tags 编辑口味）
     addDiner() {
       this.form = { show: true, mode: 'diner', title: '添加成员', val: '', hint: '姓名', id: null }
     },
@@ -272,11 +297,7 @@ export default {
     },
     async saveForm() {
       const v = (this.form.val || '').trim()
-      if (this.form.mode === 'user') {
-        if (!v) return uni.showToast({ title: '名字不能为空', icon: 'none' })
-        uni.setStorageSync('eat_user', v)
-        this.curName = v
-      } else if (this.form.mode === 'diner') {
+      if (this.form.mode === 'diner') {
         if (!v) return uni.showToast({ title: '姓名不能为空', icon: 'none' })
         await dinerApi.create({ name: v, tags: [] })
       } else if (this.form.mode === 'tags') {
@@ -300,14 +321,19 @@ export default {
 
     async loadUserEmail() {
       this.isLogin = !!uni.getStorageSync(request.TOKEN_KEY)
-      if (!this.isLogin) { this.userEmail = ''; return }
+      if (!this.isLogin) { this.userEmail = ''; this.userRole = ''; this.curName = '未登录'; return }
       try {
         const me = await authApi.me()
         this.userEmail = me.email || ''
+        this.userRole = me.role || ''
+        // 昵称以账号里的为准（本地 eat_user 可能是上一账号或手填残留）
+        if (me.nickname) { this.curName = me.nickname; uni.setStorageSync('eat_user', me.nickname) }
       } catch (e) {
         // token 失效（request.js 已清 token）→ 回到未登录态
         this.isLogin = !!uni.getStorageSync(request.TOKEN_KEY)
         this.userEmail = ''
+        this.userRole = ''
+        this.curName = '未登录'
       }
     },
     maskEmail(email) {
@@ -315,6 +341,38 @@ export default {
       const [u, d] = email.split('@')
       if (u.length <= 2) return u[0] + '***@' + d
       return u[0] + '***' + u.slice(-1) + '@' + d
+    },
+    // 点资料头 → 账号弹窗（绑定/更换邮箱 + 退出登录）
+    openAccount() { this.accountDialog = { show: true } },
+    // 账号弹窗 → 绑定/更换邮箱（复用已有邮箱弹窗；未登录会自动去登录页）
+    fromAccountToEmail() {
+      this.accountDialog.show = false
+      this.openBindEmail()
+    },
+    // 退出登录：清掉本地 token / 用户身份，回到未登录态
+    // （未登录 = 后端游客 user_id=0，各页为空态，不会看到任何账号的私人数据）
+    doLogout() {
+      uni.showModal({
+        title: '退出登录？',
+        content: '退出后需要重新用邮箱验证码登录',
+        success: (r) => {
+          if (!r.confirm) return
+          uni.removeStorageSync(request.TOKEN_KEY)
+          uni.removeStorageSync(request.USER_KEY)
+          uni.removeStorageSync('curUser')
+          uni.removeStorageSync('eat_user')
+          // 置「主动退出」标记：小程序端据此不再自动静默微信登录，
+          // 直到用户下次主动登录（login.vue 落态时会清掉该标记）
+          uni.setStorageSync(request.LOGOUT_FLAG, '1')
+          this.accountDialog.show = false
+          this.isLogin = false
+          this.userEmail = ''
+          this.userRole = ''
+          this.curName = '未登录'
+          uni.showToast({ title: '已退出', icon: 'none' })
+          this.load()
+        }
+      })
     },
     // 去登录页（H5/App 邮箱验证码登录）；redirect 用于回跳后自动接续原意图
     goLogin(redirect = '') {
@@ -407,12 +465,18 @@ export default {
 .dialog { width:100%; max-width:560rpx; background:var(--card); border-radius:20rpx; padding:32rpx; }
 .d-title { font-size:32rpx; font-weight:700; display:block; margin-bottom:20rpx; }
 .dfi { background:var(--bg); border-radius:12rpx; height:84rpx; line-height:84rpx; padding:0 16rpx; margin-bottom:24rpx; font-size:28rpx; width:100%; box-sizing:border-box; color:var(--text); }
-.d-btns { display:flex; gap:16rpx; justify-content:flex-end; }
+.d-btns { display:flex; gap:16rpx; justify-content:flex-end; flex-wrap:wrap; }
 /* 弹窗内口味 chip 网格：6列 × 最多2行，超出滚动 */
 .tag-grid { display:grid; grid-template-columns:repeat(6, 1fr); gap:10rpx; max-height:200rpx; overflow-y:auto; align-content:start; margin-bottom:12rpx; }
 .t-chip { text-align:center; font-size:24rpx; padding:10rpx 4rpx; border:1rpx solid var(--border); border-radius:10rpx; background:var(--bg); }
 .t-chip.on { background:var(--brand); color:#fff; border-color:var(--brand); }
 .d-sub { font-size:22rpx; color:var(--text-2); display:block; margin-bottom:12rpx; }
+
+/* 账号弹窗：昵称 / 邮箱信息行 */
+.acc-row { display:flex; align-items:center; gap:12rpx; padding:14rpx 0; }
+.acc-row + .acc-row { border-top:1rpx solid var(--border); }
+.acc-lab { font-size:26rpx; color:var(--text-2); width:88rpx; flex:none; }
+.acc-val { font-size:28rpx; font-weight:600; flex:1; min-width:0; word-break:break-all; }
 
 /* 资料头 */
 .pro { display:flex; align-items:center; gap:20rpx; background:var(--card); border:1rpx solid var(--border); border-radius:var(--radius-lg,16rpx); padding:26rpx 24rpx; }

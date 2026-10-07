@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlite3 import Connection
 
 from app.db import get_db, jdump, jload, row_to_dict
-from .auth import get_optional_user
+from .auth import get_optional_user, get_write_user
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -105,16 +105,27 @@ def _enrich_track(cand: dict, conn: Connection) -> dict:
     return {**cand, "timer": {"running": bool(running), "elapsed": round(elapsed)}}
 
 
+def _get_owned_inbox(conn: Connection, cid: int, user: int) -> dict:
+    """取候选并校验归属：只能操作自己的候选，避免改到别人的「吃这些」。"""
+    row = conn.execute("SELECT * FROM eat_inbox WHERE id=?", (cid,)).fetchone()
+    if not row or row["user_id"] != user:
+        raise HTTPException(404, "候选不存在")
+    return row_to_dict(row)
+
+
 @router.get("")
-def list_candidates(conn: Connection = Depends(get_db)):
-    """返回「吃这些」候选，附带实时计时状态。"""
-    rows = conn.execute("SELECT * FROM eat_inbox ORDER BY id").fetchall()
+def list_candidates(user: int = Depends(get_optional_user),
+                    conn: Connection = Depends(get_db)):
+    """返回当前用户的「吃这些」候选，附带实时计时状态。未登录（user=0）为空。"""
+    rows = conn.execute(
+        "SELECT * FROM eat_inbox WHERE user_id=? ORDER BY id", (user,)
+    ).fetchall()
     return [_enrich_track(row_to_dict(r), conn) for r in rows]
 
 
 @router.post("")
 def add_candidate(body: CandidateIn,
-                  user: int = Depends(get_optional_user),
+                  user: int = Depends(get_write_user),
                   conn: Connection = Depends(get_db)):
     """加入候选。整个方法在一个事务里（get_db 提交/回滚）：
 
@@ -138,27 +149,28 @@ def add_candidate(body: CandidateIn,
     else:
         raise HTTPException(400, "kind 须为 recipe 或 shop")
 
+    # 同一用户同一道菜/店只能有一条候选
     dup = conn.execute(
-        "SELECT id FROM eat_inbox WHERE kind=? AND ref_id=?", (kind, ref_id)
+        "SELECT id FROM eat_inbox WHERE kind=? AND ref_id=? AND user_id=?",
+        (kind, ref_id, user),
     ).fetchone()
     if dup:
         raise HTTPException(400, "该候选已在「吃这些」里")
 
     cur = conn.execute(
-        "INSERT INTO eat_inbox(kind,ref_id,name,em,subs) VALUES(?,?,?,?,?)",
-        (kind, ref_id, name, em, subs),
+        "INSERT INTO eat_inbox(user_id,kind,ref_id,name,em,subs) VALUES(?,?,?,?,?,?)",
+        (user, kind, ref_id, name, em, subs),
     )
     return {"id": cur.lastrowid, "ok": True}
 
 
 @router.delete("/{cid}")
 def remove_candidate(cid: int,
-                     user: int = Depends(get_optional_user),
+                     user: int = Depends(get_write_user),
                      conn: Connection = Depends(get_db)):
     """移除候选：回退**该用户**代入的待采购量（餐厅无代入则无影响），同事务保证一致。"""
+    _get_owned_inbox(conn, cid, user)
     row = conn.execute("SELECT * FROM eat_inbox WHERE id=?", (cid,)).fetchone()
-    if not row:
-        raise HTTPException(404, "候选不存在")
     subs = jload(row["subs"], default={})
     _subtract_subs(conn, subs, user)
     conn.execute("DELETE FROM tracks WHERE inbox_id=?", (cid,))
@@ -170,15 +182,16 @@ def remove_candidate(cid: int,
 # 计时（多道并行：一个候选一个计时，互不影响）
 # ---------------------------------------------------------------------------
 @router.post("/{cid}/timer/start")
-def timer_start(cid: int, conn: Connection = Depends(get_db)):
+def timer_start(cid: int,
+                user: int = Depends(get_write_user),
+                conn: Connection = Depends(get_db)):
     """开始/继续计时。
 
     - 从未计时：新建一条跑表 started=now。
     - 已暂停：继续（保留已累计的 paused 秒），不归零。
     - 已运行：幂等，直接返回当前状态。
     """
-    if not conn.execute("SELECT 1 FROM eat_inbox WHERE id=?", (cid,)).fetchone():
-        raise HTTPException(404, "候选不存在")
+    _get_owned_inbox(conn, cid, user)
     tr = conn.execute("SELECT * FROM tracks WHERE inbox_id=?", (cid,)).fetchone()
     if tr and tr["running"]:
         return {"cid": cid, "running": True, "ok": True}
@@ -197,8 +210,11 @@ def timer_start(cid: int, conn: Connection = Depends(get_db)):
 
 
 @router.post("/{cid}/timer/pause")
-def timer_pause(cid: int, conn: Connection = Depends(get_db)):
+def timer_pause(cid: int,
+                user: int = Depends(get_write_user),
+                conn: Connection = Depends(get_db)):
     """暂停计时：把累计运行时间并入 paused，停止走表。"""
+    _get_owned_inbox(conn, cid, user)
     tr = conn.execute("SELECT * FROM tracks WHERE inbox_id=?", (cid,)).fetchone()
     if not tr or not tr["running"]:
         raise HTTPException(400, "计时未在运行")
@@ -212,16 +228,19 @@ def timer_pause(cid: int, conn: Connection = Depends(get_db)):
 
 
 @router.post("/{cid}/timer/cancel")
-def timer_cancel(cid: int, conn: Connection = Depends(get_db)):
+def timer_cancel(cid: int,
+                 user: int = Depends(get_write_user),
+                 conn: Connection = Depends(get_db)):
     """取消计时：删除计时记录，候选仍保留在吃这些。"""
+    _get_owned_inbox(conn, cid, user)
     conn.execute("DELETE FROM tracks WHERE inbox_id=?", (cid,))
     return {"cid": cid, "ok": True}
 
 
 @router.get("/{cid}/timer")
-def timer_get(cid: int, conn: Connection = Depends(get_db)):
+def timer_get(cid: int,
+              user: int = Depends(get_optional_user),
+              conn: Connection = Depends(get_db)):
     """查询某个候选的实时计时状态。"""
-    row = conn.execute("SELECT * FROM eat_inbox WHERE id=?", (cid,)).fetchone()
-    if not row:
-        raise HTTPException(404, "候选不存在")
-    return _enrich_track(row_to_dict(row), conn)["timer"]
+    cand = _get_owned_inbox(conn, cid, user)
+    return _enrich_track(cand, conn)["timer"]
