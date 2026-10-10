@@ -57,7 +57,7 @@ def health():
 # 目录：项目根下的 web/。
 # 生产环境通常由 Caddy / Nginx 托管 H5 静态、后端只跑 API —— 此时 web/ 目录不存在，
 # 跳过挂载（Caddy 反代 `/api/*` 到后端，根路径 `/` 直接由 Caddy 处理）。
-# 本地开发如果有 web/ 构建产物则自动挂载，访问 http://localhost:8000/ 即可打开应用。
+# 本地开发如果有 web/ 构建产物则自动挂载，访问 http://localhost:8001/ 即可打开应用。
 _WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 if _WEB_DIR.is_dir():
     app.mount("/", StaticFiles(directory=_WEB_DIR, html=True), name="web")

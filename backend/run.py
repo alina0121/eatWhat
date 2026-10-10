@@ -3,10 +3,14 @@
 
 开发：    python run.py              (单 worker + reload)
 生产：    python run.py prod         (多 worker，无 reload，配合 systemd)
-          或  uvicorn app.main:app --workers 4 --host 0.0.0.0 --port 8000
+          或  uvicorn app.main:app --workers 4 --host 0.0.0.0 --port 8001
+
+端口固定 8001：与生产一致（生产服务器 8000 被现有项目占用）。
 """
 import sys
 import uvicorn
+
+PORT = 8001
 
 if __name__ == "__main__":
     is_prod = len(sys.argv) > 1 and sys.argv[1] == "prod"
@@ -14,7 +18,7 @@ if __name__ == "__main__":
         uvicorn.run(
             "app.main:app",
             host="0.0.0.0",
-            port=8000,
+            port=PORT,
             workers=4,        # 多 worker：按服务器 CPU 核数调，2-4 起步
             reload=False,
             log_level="info",
@@ -24,6 +28,6 @@ if __name__ == "__main__":
         uvicorn.run(
             "app.main:app",
             host="0.0.0.0",
-            port=8000,
+            port=PORT,
             reload=True,
         )
