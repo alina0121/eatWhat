@@ -472,16 +472,10 @@ export default {
         success: (res) => { if (res.confirm) recipeApi.del(r.id).then(this.loadAll).catch(this._err) }
       })
     },
-    // —— 食材大类（全局共享） ——
-    // 注意：methods 里与上面「公共层」区块存在同名 openCatAdd/moveCat/delCat（对象字面量后者覆盖前者，实际生效的是本组）。
-    // 保持同名覆盖现状不动，仅补 catch —— 模板引用的是同名方法，生效即本组。
-    openCatAdd() { this.form = { id: null, name: '', icon: '🥗' }; this.modal = { show: true, mode: 'cat', id: null } },
-    moveCat(c, dir) { catApi.move(c.id, dir).then(this.loadAll).catch(this._err) },
-    delCat(c) {
-      uni.showModal({ title: '删除大类', content: `删除「${c.name}」？该大类下食材/冰箱项退回「其他」。`, confirmText: '删除', confirmColor: '#e64340',
-        success: (res) => { if (res.confirm) catApi.del(c.id).then(this.loadAll).catch(this._err) } })
-    },
     // —— 弹窗 ——
+    // （食材大类的增删改/排序统一用上面「公共层」区块的方法，均带 user=1 & admin=1 —— 公共大类必须传 admin=1，
+    //   否则后端 _get_row 返回 403「公共大类不能改」，表现为删不掉/移不动。此前此处存在一组同名方法把
+    //   正确版本覆盖掉了（对象字面量后者生效），已删除。）
     openModal(mode) {
       if (mode === 'ref') {
         this.form = { id: null, name: '', em: '🍲', time: 20, diff: '简单', tagsText: '', ingText: '', stepsText: '' }
