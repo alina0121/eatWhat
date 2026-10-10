@@ -15,6 +15,9 @@ venv/
 eatwhat.db
 # SQLite 运行时产生的 WAL / SHM 临时文件
 backend/eatwhat.db-*
+# 数据库备份：统一加 .bak 后缀（服务器端备份命令天然生成 *.bak），目录本身也兜底忽略
+*.bak
+数据库备份*/
 
 # 编辑器与本机环境
 .DS_Store
