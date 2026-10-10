@@ -91,6 +91,10 @@
       "style": { "navigationBarTitleText": "我的数据", "navigationStyle": "custom" }
     },
     {
+      "path": "pages/account-settings/account-settings",
+      "style": { "navigationBarTitleText": "账户设置", "navigationStyle": "custom" }
+    },
+    {
       "path": "pages/login/login",
       "style": { "navigationBarTitleText": "登录", "navigationStyle": "custom" }
     }

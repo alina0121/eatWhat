@@ -1,6 +1,7 @@
 <!-- mine.vue —— 我的页（对齐「第一版 UI」p-me）
-  结构：资料头（头像+昵称+副标题）→ 统计条(本周做了多少顿 / 我的菜谱 / 收藏餐厅)
+  结构：资料头（头像+昵称+副标题，点击弹账号弹窗）→ 统计条(本周做了多少顿 / 我的菜谱 / 收藏餐厅)
         → 干饭成员(各自口味偏好维护) → 功能菜单行(图标 + 标题 + 副标题 + ›)
+  注：邮箱绑定 / 退出登录 / 注销账户已归拢到 account-settings 账户设置页
 -->
 <template>
   <view class="tab-page">
@@ -11,9 +12,9 @@
     <scroll-view class="tab-scroll" scroll-y>
       <!-- 资料头 -->
       <view class="section">
-        <!-- 点整行打开「账号」弹窗：绑定/更换邮箱 + 退出登录 -->
+        <!-- 点整行打开「账号」弹窗（未登录）；已登录直接进「账户设置」 -->
         <view class="pro" @tap="openAccount">
-          <view class="ava"><text class="ava-em">{{ curName.slice(0, 1) }}</text></view>
+          <view class="ava"><text class="ava-em">{{ userAvatar || curName.slice(0, 1) }}</text></view>
           <view class="pro-c">
             <view class="pro-nm">
               <text class="pname">{{ curName }}</text>
@@ -84,39 +85,15 @@
           <view class="mrow" @tap="nav('/pages/mine-data/mine-data')">
             <text class="ic">📊</text><view class="m1"><text class="mt">我的数据</text><text class="ms">计数 · 本月干饭 · 体重趋势</text></view><text class="ar">›</text>
           </view>
+          <view class="mrow" @tap="goAccountSettings">
+            <text class="ic">⚙️</text><view class="m1"><text class="mt">账户设置</text><text class="ms">邮箱绑定 · 退出登录 · 注销账户</text></view><text class="ar">›</text>
+          </view>
           <!-- #ifdef H5 -->
           <!-- 管理端页面仅 H5 存在（见 pages.json 条件编译），故入口也只在 H5 渲染 -->
           <view class="mrow" v-if="isPc" @tap="nav('/pages/admin/admin')">
             <text class="ic">🖥️</text><view class="m1"><text class="mt">管理端（PC）</text><text class="ms">审核 · 图库 · 食材 · 餐厅 · 配置</text></view><text class="ar">›</text>
           </view>
           <!-- #endif -->
-
-          <!-- 登录（未登录时才显示；H5/App 走邮箱验证码，小程序端启动即静默登录） -->
-          <view class="mrow" v-if="!isLogin" @tap="goLogin">
-            <text class="ic">🔑</text><view class="m1"><text class="mt">登录 / 注册</text><text class="ms">邮箱验证码登录，登录后可绑定邮箱</text></view><text class="ar">›</text>
-          </view>
-
-          <!-- 绑定邮箱 -->
-          <view class="mrow" @tap="openBindEmail">
-            <text class="ic">📧</text>
-            <view class="m1">
-              <text class="mt">邮箱绑定</text>
-              <text class="ms">{{ !isLogin ? '未登录 · 点击去登录' : (userEmail ? '已绑定 ' + maskEmail(userEmail) : '未绑定 · H5/App 登录用') }}</text>
-            </view>
-            <text class="ar">›</text>
-          </view>
-        </view>
-      </view>
-
-      <!-- 注销账户（危险区域；管理员账号不可自助注销，与后端拦截保持一致） -->
-      <view class="section" v-if="userRole !== 'admin'">
-        <view class="danger-zone" @tap="confirmDelete">
-          <text class="danger-ic">⚠️</text>
-          <view class="danger-info">
-            <text class="danger-title">注销账户</text>
-            <text class="danger-sub">物理删除你的所有数据，不可恢复</text>
-          </view>
-          <text class="ar">›</text>
         </view>
       </view>
 
@@ -148,76 +125,15 @@
       </view>
     </view>
 
-    <!-- 绑定邮箱弹窗 -->
-    <view class="mask" v-if="emailDialog.show" @tap="emailDialog.show = false">
-      <view class="dialog" @tap.stop>
-        <text class="d-title">{{ userEmail ? '解绑邮箱' : '绑定邮箱' }}</text>
-        <template v-if="!userEmail">
-          <input v-model="emailDialog.email" placeholder="你的邮箱" class="dfi" type="email" />
-          <view class="dflex">
-            <input v-model="emailDialog.code" placeholder="6 位验证码" class="dfi flex1" type="number" maxlength="6" />
-            <button class="pbtn sm ghost" :disabled="emailCd > 0" @tap="sendEmailCode">{{ emailCd > 0 ? emailCd + 's' : '获取验证码' }}</button>
-          </view>
-          <text class="d-sub">未配置 SMTP 时验证码打印在后端日志里</text>
-        </template>
-        <template v-else>
-          <text class="d-sub">当前已绑定 {{ userEmail }}</text>
-          <text class="d-sub">解绑后邮箱可重新绑定或用于新账号注册</text>
-        </template>
-        <view class="d-btns">
-          <button class="pbtn ghost" @tap="emailDialog.show = false">取消</button>
-          <button v-if="!userEmail" class="pbtn" @tap="doBindEmail">绑定</button>
-          <button v-else class="pbtn" @tap="doUnbindEmail">解绑</button>
-        </view>
-      </view>
-    </view>
-
-    <!-- 账号弹窗：点「我」的资料头打开。已登录 → 展示邮箱 + 绑定/更换邮箱 + 退出登录；未登录 → 引导去登录 -->
+    <!-- 账号弹窗：仅未登录时弹出（已登录点资料头直接进「账户设置」页） -->
     <view class="mask" v-if="accountDialog.show" @tap="accountDialog.show = false">
       <view class="dialog" @tap.stop>
         <text class="d-title">账号</text>
-        <template v-if="isLogin">
-          <view class="acc-row">
-            <text class="acc-lab">昵称</text>
-            <text class="acc-val">{{ curName }}</text>
-          </view>
-          <view class="acc-row">
-            <text class="acc-lab">邮箱</text>
-            <text class="acc-val">{{ userEmail || '未绑定' }}</text>
-          </view>
-        </template>
-        <text class="d-sub" v-else>还没登录 · 登录后菜谱 / 冰箱 / 干饭记录可跨端带走</text>
+        <text class="d-sub">还没登录 · 登录后菜谱 / 冰箱 / 干饭记录可跨端带走</text>
         <view class="d-btns">
           <button class="pbtn ghost" @tap="accountDialog.show = false">关闭</button>
-          <template v-if="isLogin">
-            <button class="pbtn ghost" @tap="fromAccountToEmail">{{ userEmail ? '更换邮箱' : '绑定邮箱' }}</button>
-            <button class="pbtn danger" @tap="doLogout">退出登录</button>
-          </template>
-          <button v-else class="pbtn" @tap="accountDialog.show = false; goLogin()">去登录</button>
+          <button class="pbtn" @tap="accountDialog.show = false; goLogin()">去登录</button>
         </view>
-      </view>
-    </view>
-
-    <!-- 注销确认弹窗（双确认：第一次警告，第二次输入"确认注销"） -->
-    <view class="mask" v-if="deleteDialog.show" @tap="deleteDialog.step = 1">
-      <view class="dialog" @tap.stop>
-        <template v-if="deleteDialog.step === 1">
-          <text class="d-title danger">⚠️ 确认注销？</text>
-          <text class="d-sub">你的菜谱、冰箱、干饭记录、体重、厨房技巧……<text class="danger-bold">全部物理删除，不可恢复</text>。确定要继续吗？</text>
-          <view class="d-btns">
-            <button class="pbtn ghost" @tap="deleteDialog.show = false">再想想</button>
-            <button class="pbtn danger" @tap="deleteDialog.step = 2">继续注销</button>
-          </view>
-        </template>
-        <template v-else>
-          <text class="d-title danger">最后确认</text>
-          <text class="d-sub">请输入 <text class="danger-bold">"确认注销"</text> 来真的删除所有数据</text>
-          <input v-model="deleteDialog.val" placeholder="输入：确认注销" class="dfi" />
-          <view class="d-btns">
-            <button class="pbtn ghost" @tap="deleteDialog.show = false">取消</button>
-            <button class="pbtn danger" @tap="doDelete" :disabled="deleteDialog.val !== '确认注销'">确认注销</button>
-          </view>
-        </template>
       </view>
     </view>
   </view>
@@ -232,11 +148,10 @@ export default {
     return { diners: [], curName: '', userRole: '', weekCount: 0, myRecipes: 0, shopCount: 0, isPc: false,
              allTags: [], tagSel: [],   // 口味标签池（来自 tasteApi）+ 当前选中
              form: { show: false, mode: '', title: '', val: '', hint: '', id: null },
-             // 登录 / 邮箱绑定 / 账号弹窗 / 注销相关
+             // 登录态 / 账号弹窗（已登录点资料头直接进 account-settings 页；未登录弹引导）
              isLogin: false,
-             userEmail: '', emailCd: 0, emailDialog: { show: false, email: '', code: '' },
-             accountDialog: { show: false },
-             deleteDialog: { show: false, step: 1, val: '' }, }
+             userEmail: '', userAvatar: '',
+             accountDialog: { show: false }, }
   },
   async onShow() {
     // 昵称占位：未登录时显示「未登录」，避免与任何真实账号混淆
@@ -249,10 +164,10 @@ export default {
     } catch (e) { this.isPc = false }
     this.load()
     await this.loadUserEmail()
-    // 从登录页带「bind」意图返回 → 自动弹出邮箱弹窗，省去用户再点一次
+    // 从登录页带「bind」意图返回 → 直接进「账户设置」页（绑定弹窗在那边自动弹出）
     if (uni.getStorageSync('eat_open_bind_after_login')) {
       uni.removeStorageSync('eat_open_bind_after_login')
-      if (this.isLogin) this.emailDialog = { show: true, email: '', code: '' }
+      if (this.isLogin) uni.navigateTo({ url: '/pages/account-settings/account-settings' })
     }
   },
   methods: {
@@ -317,15 +232,16 @@ export default {
       uni.navigateTo({ url })
     },
 
-    // ---------- 邮箱绑定 / 注销 ----------
+    // ---------- 登录态 / 资料头 ----------
 
     async loadUserEmail() {
       this.isLogin = !!uni.getStorageSync(request.TOKEN_KEY)
-      if (!this.isLogin) { this.userEmail = ''; this.userRole = ''; this.curName = '未登录'; return }
+      if (!this.isLogin) { this.userEmail = ''; this.userRole = ''; this.curName = '未登录'; this.userAvatar = ''; return }
       try {
         const me = await authApi.me()
         this.userEmail = me.email || ''
         this.userRole = me.role || ''
+        this.userAvatar = me.avatar || ''
         // 昵称以账号里的为准（本地 eat_user 可能是上一账号或手填残留）
         if (me.nickname) { this.curName = me.nickname; uni.setStorageSync('eat_user', me.nickname) }
       } catch (e) {
@@ -334,119 +250,22 @@ export default {
         this.userEmail = ''
         this.userRole = ''
         this.curName = '未登录'
+        this.userAvatar = ''
       }
     },
-    maskEmail(email) {
-      if (!email) return ''
-      const [u, d] = email.split('@')
-      if (u.length <= 2) return u[0] + '***@' + d
-      return u[0] + '***' + u.slice(-1) + '@' + d
+    // 点资料头：已登录直接进「账户设置」（改头像/昵称/邮箱/退出/注销都在那）；未登录弹引导弹窗
+    openAccount() {
+      if (this.isLogin) return this.goAccountSettings()
+      this.accountDialog = { show: true }
     },
-    // 点资料头 → 账号弹窗（绑定/更换邮箱 + 退出登录）
-    openAccount() { this.accountDialog = { show: true } },
-    // 账号弹窗 → 绑定/更换邮箱（复用已有邮箱弹窗；未登录会自动去登录页）
-    fromAccountToEmail() {
+    // 账号弹窗 / 菜单行 → 「账户设置」页（绑定邮箱、退出登录、注销都在那边）
+    goAccountSettings() {
       this.accountDialog.show = false
-      this.openBindEmail()
-    },
-    // 退出登录：清掉本地 token / 用户身份，回到未登录态
-    // （未登录 = 后端游客 user_id=0，各页为空态，不会看到任何账号的私人数据）
-    doLogout() {
-      uni.showModal({
-        title: '退出登录？',
-        content: '退出后需要重新用邮箱验证码登录',
-        success: (r) => {
-          if (!r.confirm) return
-          uni.removeStorageSync(request.TOKEN_KEY)
-          uni.removeStorageSync(request.USER_KEY)
-          uni.removeStorageSync('curUser')
-          uni.removeStorageSync('eat_user')
-          // 置「主动退出」标记：小程序端据此不再自动静默微信登录，
-          // 直到用户下次主动登录（login.vue 落态时会清掉该标记）
-          uni.setStorageSync(request.LOGOUT_FLAG, '1')
-          this.accountDialog.show = false
-          this.isLogin = false
-          this.userEmail = ''
-          this.userRole = ''
-          this.curName = '未登录'
-          uni.showToast({ title: '已退出', icon: 'none' })
-          this.load()
-        }
-      })
+      uni.navigateTo({ url: '/pages/account-settings/account-settings' })
     },
     // 去登录页（H5/App 邮箱验证码登录）；redirect 用于回跳后自动接续原意图
     goLogin(redirect = '') {
       uni.navigateTo({ url: `/pages/login/login${redirect ? `?redirect=${redirect}` : ''}` })
-    },
-    openBindEmail() {
-      // 未登录 → 跳到登录页，登录成功后自动回来弹出绑定弹窗
-      if (!uni.getStorageSync(request.TOKEN_KEY)) return this.goLogin('bind')
-      this.emailDialog = { show: true, email: '', code: '' }
-    },
-    async sendEmailCode() {
-      if (!this.emailDialog.email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(this.emailDialog.email)) {
-        uni.showToast({ title: '邮箱格式不正确', icon: 'none' }); return
-      }
-      try {
-        const r = await authApi.sendEmailCode(this.emailDialog.email, 'bind')
-        uni.showToast({ title: r.hint || '验证码已发送', icon: 'none' })
-        // 60s 倒计时
-        this.emailCd = 60
-        const t = setInterval(() => {
-          this.emailCd--
-          if (this.emailCd <= 0) clearInterval(t)
-        }, 1000)
-      } catch (e) {
-        uni.showToast({ title: e.message || '发送失败', icon: 'none' })
-      }
-    },
-    async doBindEmail() {
-      if (!this.emailDialog.code || this.emailDialog.code.length !== 6) {
-        uni.showToast({ title: '请输入 6 位验证码', icon: 'none' }); return
-      }
-      try {
-        await authApi.bindEmail(this.emailDialog.email, this.emailDialog.code)
-        uni.showToast({ title: '绑定成功', icon: 'success' })
-        this.emailDialog.show = false
-        await this.loadUserEmail()
-      } catch (e) {
-        uni.showToast({ title: e.message || '绑定失败', icon: 'none' })
-      }
-    },
-    async doUnbindEmail() {
-      uni.showModal({
-        title: '确认解绑？',
-        content: '解绑后此邮箱可重新绑定或用于新账号注册',
-        success: async (r) => {
-          if (!r.confirm) return
-          try {
-            await authApi.unbindEmail()
-            uni.showToast({ title: '已解绑', icon: 'success' })
-            this.emailDialog.show = false
-            await this.loadUserEmail()
-          } catch (e) {
-            uni.showToast({ title: e.message || '解绑失败', icon: 'none' })
-          }
-        }
-      })
-    },
-    confirmDelete() {
-      this.deleteDialog = { show: true, step: 1, val: '' }
-    },
-    async doDelete() {
-      if (this.deleteDialog.val !== '确认注销') return
-      try {
-        await authApi.deleteMe()
-        // 清 token + 用户信息
-        uni.removeStorageSync(request.TOKEN_KEY)
-        uni.removeStorageSync(request.USER_KEY)
-        uni.showToast({ title: '已注销', icon: 'success' })
-        setTimeout(() => {
-          uni.reLaunch({ url: '/pages/index/index' })
-        }, 800)
-      } catch (e) {
-        uni.showToast({ title: e.message || '注销失败', icon: 'none' })
-      }
     },
   }
 }
@@ -470,13 +289,9 @@ export default {
 .tag-grid { display:grid; grid-template-columns:repeat(6, 1fr); gap:10rpx; max-height:200rpx; overflow-y:auto; align-content:start; margin-bottom:12rpx; }
 .t-chip { text-align:center; font-size:24rpx; padding:10rpx 4rpx; border:1rpx solid var(--border); border-radius:10rpx; background:var(--bg); }
 .t-chip.on { background:var(--brand); color:#fff; border-color:var(--brand); }
-.d-sub { font-size:22rpx; color:var(--text-2); display:block; margin-bottom:12rpx; }
 
-/* 账号弹窗：昵称 / 邮箱信息行 */
-.acc-row { display:flex; align-items:center; gap:12rpx; padding:14rpx 0; }
-.acc-row + .acc-row { border-top:1rpx solid var(--border); }
-.acc-lab { font-size:26rpx; color:var(--text-2); width:88rpx; flex:none; }
-.acc-val { font-size:28rpx; font-weight:600; flex:1; min-width:0; word-break:break-all; }
+/* 账号弹窗（未登录引导） */
+.d-sub { font-size:22rpx; color:var(--text-2); display:block; margin-bottom:12rpx; }
 
 /* 资料头 */
 .pro { display:flex; align-items:center; gap:20rpx; background:var(--card); border:1rpx solid var(--border); border-radius:var(--radius-lg,16rpx); padding:26rpx 24rpx; }
@@ -515,22 +330,4 @@ export default {
 .ms { font-size:22rpx; color:var(--text-2); }
 .ar { color:var(--text-2); font-size:30rpx; }
 .tab-pad { height:40rpx; }
-
-/* 注销危险区 */
-.danger-zone { display:flex; align-items:center; gap:18rpx; padding:24rpx; background:#fff5f5; border:1rpx solid #ffd6d6; border-radius:var(--radius-lg,16rpx); }
-.danger-ic { font-size:36rpx; }
-.danger-info { flex:1; min-width:0; display:flex; flex-direction:column; gap:4rpx; }
-.danger-title { font-size:28rpx; font-weight:600; color:#e74c3c; }
-.danger-sub { font-size:22rpx; color:#c0392b; }
-
-/* 弹窗里注销的红色按钮 */
-.d-title.danger { color:#e74c3c; }
-.danger-bold { color:#e74c3c; font-weight:600; }
-.pbtn.danger { background:#e74c3c; color:#fff; }
-.pbtn.danger[disabled] { opacity:.4; }
-
-/* 邮箱弹窗里的 flex 行 */
-.dflex { display:flex; gap:12rpx; align-items:center; }
-.flex1 { flex:1; }
-.pbtn.sm { font-size:24rpx; padding:10rpx 20rpx; }
 </style>
