@@ -418,38 +418,40 @@ export default {
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
     // —— 用户管理 ——
+    // 写操作统一错误提示：后端 401/403（如删除自己被自保护拦截）必须弹出来，不能静默吞掉
+    _err(e) { uni.showToast({ title: (e && e.message) || '操作失败', icon: 'none' }) },
     openUserAdd() { this.form = { id: null, name: '', role: 'user' }; this.modal = { show: true, mode: 'user', id: null } },
     editUser(u) { this.form = { id: u.id, name: u.nickname || u.name || '', role: u.role }; this.modal = { show: true, mode: 'user', id: u.id } },
     toggleRole(u) {
       const role = u.role === 'admin' ? 'user' : 'admin'
       if (u.id === 1 && role === 'user') return uni.showToast({ title: '内置管理员不可降级', icon: 'none' })
-      adminApi.updateUser(u.id, { role }).then(this.loadAll)
+      adminApi.updateUser(u.id, { role }).then(this.loadAll).catch(this._err)
     },
     delUser(u) {
       if (u.id === 1) return uni.showToast({ title: '内置管理员不可删除', icon: 'none' })
       const label = u.nickname || u.name || ('用户' + u.id)
       const mail = u.email ? `（${u.email}）` : ''
       uni.showModal({ title: '删除用户', content: `删除「${label}」${mail}？`, confirmText: '删除', confirmColor: '#e64340',
-        success: (res) => { if (res.confirm) adminApi.delUser(u.id).then(this.loadAll) } })
+        success: (res) => { if (res.confirm) adminApi.delUser(u.id).then(this.loadAll).catch(this._err) } })
     },
     // —— 食材大类（只管公共层） ——
     openCatAdd() { this.form = { id: null, name: '', icon: '🥗' }; this.modal = { show: true, mode: 'cat', id: null } },
     editCat(c) { this.form = { id: c.id, name: c.name, icon: c.icon }; this.modal = { show: true, mode: 'cat', id: c.id } },
-    moveCat(c, dir) { catApi.move(c.id, dir, 1, true).then(this.loadAll) },
+    moveCat(c, dir) { catApi.move(c.id, dir, 1, true).then(this.loadAll).catch(this._err) },
     delCat(c) {
       uni.showModal({ title: '删除公共大类', content: `删除「${c.name}」？引用它的食材会退回「其他」。`, confirmText: '删除', confirmColor: '#e64340',
-        success: (res) => { if (res.confirm) catApi.del(c.id, 1, true).then(this.loadAll) } })
+        success: (res) => { if (res.confirm) catApi.del(c.id, 1, true).then(this.loadAll).catch(this._err) } })
     },
     // —— 食材库（只管公共层） ——
     openIngEdit(it) { this.form = { id: it.id, name: it.name, cat: it.cat, icon: it.icon || '' }; this.modal = { show: true, mode: 'ing', id: it.id } },
     delIng(it) {
       uni.showModal({ title: '移除公共食材', content: `从公共食材库移除「${it.name}」？用户自己补录的不受影响。`, confirmText: '移除', confirmColor: '#e64340',
-        success: (res) => { if (res.confirm) ingredientApi.del(it.id, 1, true).then(this.loadAll) } })
+        success: (res) => { if (res.confirm) ingredientApi.del(it.id, 1, true).then(this.loadAll).catch(this._err) } })
     },
     // —— 技巧审核 ——
     statusText(s) { return { pending: '⏳ 待审核', approved: '✅ 已公开', rejected: '🚫 未通过' }[s] || '' },
-    async approve(t) { await tipApi.approve(t.id); this.loadAll() },
-    async reject(t) { await tipApi.reject(t.id); this.loadAll() },
+    async approve(t) { try { await tipApi.approve(t.id); this.loadAll() } catch (e) { this._err(e) } },
+    async reject(t) { try { await tipApi.reject(t.id); this.loadAll() } catch (e) { this._err(e) } },
     // —— 参考菜谱 编辑/删除 ——
     editRef(r) {
       // cover 直接存渐变字符串（旧 "emoji|grad" 格式兼容：取 | 后半段）
@@ -467,16 +469,17 @@ export default {
     delRef(r) {
       uni.showModal({
         title: '删除参考菜谱', content: `删除「${r.name}」？若已加入「吃这些」会一并移除。`, confirmText: '删除', confirmColor: '#e64340',
-        success: (res) => { if (res.confirm) recipeApi.del(r.id).then(this.loadAll) }
+        success: (res) => { if (res.confirm) recipeApi.del(r.id).then(this.loadAll).catch(this._err) }
       })
     },
     // —— 食材大类（全局共享） ——
+    // 注意：methods 里与上面「公共层」区块存在同名 openCatAdd/moveCat/delCat（对象字面量后者覆盖前者，实际生效的是本组）。
+    // 保持同名覆盖现状不动，仅补 catch —— 模板引用的是同名方法，生效即本组。
     openCatAdd() { this.form = { id: null, name: '', icon: '🥗' }; this.modal = { show: true, mode: 'cat', id: null } },
-    editCat(c) { this.form = { id: c.id, name: c.name, icon: c.icon }; this.modal = { show: true, mode: 'cat', id: c.id } },
-    moveCat(c, dir) { catApi.move(c.id, dir).then(this.loadAll) },
+    moveCat(c, dir) { catApi.move(c.id, dir).then(this.loadAll).catch(this._err) },
     delCat(c) {
       uni.showModal({ title: '删除大类', content: `删除「${c.name}」？该大类下食材/冰箱项退回「其他」。`, confirmText: '删除', confirmColor: '#e64340',
-        success: (res) => { if (res.confirm) catApi.del(c.id).then(this.loadAll) } })
+        success: (res) => { if (res.confirm) catApi.del(c.id).then(this.loadAll).catch(this._err) } })
     },
     // —— 弹窗 ——
     openModal(mode) {

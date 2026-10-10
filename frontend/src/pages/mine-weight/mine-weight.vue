@@ -226,9 +226,15 @@ export default {
       this.showForm = false
       this.load()
     },
-    async del(w) {
-      await weightApi.del(w.id)
-      this.load()
+    // 删除体重记录：二次确认，失败要提示
+    del(w) {
+      uni.showModal({
+        title: '删除记录', content: `删除 ${w.date} 的体重记录？`, confirmText: '删除', confirmColor: '#e64340',
+        success: async (res) => {
+          if (!res.confirm) return
+          try { await weightApi.del(w.id); this.load() } catch (e) { uni.showToast({ title: e.message || '删除失败', icon: 'none' }) }
+        },
+      })
     }
   }
 }

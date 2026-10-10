@@ -91,7 +91,16 @@ export default {
       this.showForm = false
       this.load()
     },
-    async del(t) { await tipApi.del(t.id); this.load() }
+    // 删除技巧：二次确认（不可恢复），失败要提示（401 未登录等）
+    del(t) {
+      uni.showModal({
+        title: '删除技巧', content: `删除「${t.title}」？删除后不可恢复。`, confirmText: '删除', confirmColor: '#e64340',
+        success: async (res) => {
+          if (!res.confirm) return
+          try { await tipApi.del(t.id); this.load() } catch (e) { uni.showToast({ title: e.message || '删除失败', icon: 'none' }) }
+        },
+      })
+    }
   }
 }
 </script>

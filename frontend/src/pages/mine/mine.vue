@@ -222,9 +222,15 @@ export default {
       this.form.show = false
       this.load()
     },
-    async delDiner(d) {
-      await dinerApi.del(d.id)
-      this.load()
+    // 移除干饭成员：二次确认，失败要提示
+    delDiner(d) {
+      uni.showModal({
+        title: '移除成员', content: `移除「${d.name}」？其口味偏好设置将一并删除。`, confirmText: '移除', confirmColor: '#e64340',
+        success: async (res) => {
+          if (!res.confirm) return
+          try { await dinerApi.del(d.id); this.load() } catch (e) { uni.showToast({ title: e.message || '操作失败', icon: 'none' }) }
+        },
+      })
     },
     nav(url) {
       // 餐厅/菜谱是 tab 页，用 reLaunch；其余二级页 navigateTo

@@ -134,10 +134,19 @@ export default {
         this.load()
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
-    async del() {
-      await shopApi.del(this.form.id)
-      this.formShow = false
-      this.load()
+    // 删除餐厅：二次确认（表单弹窗内按钮），失败要提示
+    del() {
+      uni.showModal({
+        title: '删除餐厅', content: `删除「${this.form.name}」？删除后不可恢复。`, confirmText: '删除', confirmColor: '#e64340',
+        success: async (res) => {
+          if (!res.confirm) return
+          try {
+            await shopApi.del(this.form.id)
+            this.formShow = false
+            this.load()
+          } catch (e) { uni.showToast({ title: e.message || '删除失败', icon: 'none' }) }
+        },
+      })
     }
   }
 }
