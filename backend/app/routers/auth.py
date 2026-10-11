@@ -554,6 +554,17 @@ def delete_my_account(uid: int = Depends(get_current_user), conn=Depends(get_con
         (uid,),
     )
 
+    # 1.5 已审核通过的厨房技巧不随注销删除，转归管理员（内置 id=1 优先）
+    #     待审/退回的技巧没公开过，随注销直接删（下面级联里处理）
+    admin = conn.execute(
+        "SELECT id FROM users WHERE role='admin' AND id!=? ORDER BY id LIMIT 1", (uid,)
+    ).fetchone()
+    admin_id = admin["id"] if admin else 1
+    conn.execute(
+        "UPDATE tips SET user_id=? WHERE user_id=? AND status='approved'",
+        (admin_id, uid),
+    )
+
     # 2. 级联删除所有业务表数据
     deleted_counts = {}
     for table in _CASCADE_TABLES:
