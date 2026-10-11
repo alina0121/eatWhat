@@ -110,13 +110,6 @@ function redirectToLogin() {
 
 function req(method, path, data) {
   return new Promise(async (resolve, reject) => {
-    // 小程序端：没 token 先确保登录（静默 wx.login），避免写操作因未登录被 401
-    // #ifdef MP-WEIXIN
-    if (!uni.getStorageSync(TOKEN_KEY)) {
-      try { await ensureLogin() } catch (e) {}
-    }
-    // #endif
-
     const token = uni.getStorageSync(TOKEN_KEY)
     const header = { 'Content-Type': 'application/json' }
     if (token) header['Authorization'] = 'Bearer ' + token
@@ -152,13 +145,6 @@ function req(method, path, data) {
     })
   })
 }
-
-// 应用启动时预登录一次（小程序端），尽早拿到 token
-// 注意：这里必须加 .catch(() => {})，否则网络异常 / 合法域名未生效时会变成 unhandled promise rejection，
-// 导致小程序启动直接白屏（体验版基础库比开发者工具更严格）
-// #ifdef MP-WEIXIN
-ensureLogin().catch(() => {})
-// #endif
 
 export default {
   BASE,
