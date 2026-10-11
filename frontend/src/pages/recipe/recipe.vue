@@ -1,63 +1,17 @@
-<!-- recipe.vue —— 「菜谱 / 吃这些」页
+<!-- recipe.vue —— 「菜谱」页
   对齐「第一版 UI」：
-  - 顶部标题「吃这些」+ 「按口味筛」横滑 chips
-  - 顶部候选收件箱（eat-row 两行卡）：emoji + 菜名 + 类型徽章 + ✕ 移除 + 计时(▶⏸⏹)
-  - 候选移除 → 后端按量回退待采购（COOK 一致）；菜谱候选加入 → 缺货代入待采购
-  - 计时多道并行：行内直接开始/暂停/取消，running 实时走表
-  - 全部菜谱列表（渐变封面）+「+候选」按钮 +「＋ 新建菜谱」
+  - 「吃这些」候选收件箱已迁至底部「候选」tab（pages/cands/cands）
+  - 「按口味筛」横滑 chips
+  - 菜谱列表 tab 切换：我的菜谱 / 优选餐厅 / 参考菜谱（渐变封面 +「+候选」+「＋ 新建」）
 -->
 <template>
   <view class="tab-page">
-    <!-- 顶部标题（对齐原型 topbar：仅「吃这些」，无计数） -->
     <view class="page-header">
-      <text class="page-title">吃这些</text>
+      <text class="page-title">选菜</text>
     </view>
 
     <scroll-view class="tab-scroll" scroll-y>
-      <!-- ============ 候选收件箱「吃这些」 ============ -->
-      <view class="section" v-if="cands.length">
-        <view class="cand card" v-for="c in cands" :key="c.id" @tap="openDetail(c)">
-          <!-- 第一行：emoji + 菜名 + 类型徽章 -->
-          <view class="cand-top">
-            <text class="cand-em">{{ c.em }}</text>
-            <view class="cand-name">
-              <text class="cand-title">{{ c.name }}</text>
-              <text class="badge" :class="c.kind === 'shop' ? 'b-shop' : 'b-recipe'">
-                {{ c.kind === 'shop' ? '餐厅' : '菜谱' }}
-              </text>
-            </view>
-          </view>
-          <!-- 第二行：计时(仅菜谱) + 记一笔 + ✕（对齐原型 tl-bot 布局）
-               餐厅是外出用餐、不需在厨房计时，故仅菜谱候选显示计时区 -->
-          <view class="cand-bottom">
-            <template v-if="c.kind !== 'shop'">
-              <template v-if="c.timer && c.timer.running">
-                <text class="rtime run">⏱ {{ fmt(c.timer.elapsed) }}</text>
-                <text class="tbtn on" @tap.stop="pauseTimer(c)">⏸ 停止</text>
-                <text class="tbtn" @tap.stop="cancelTimer(c)">⏹ 取消</text>
-              </template>
-              <template v-else-if="c.timer">
-                <text class="rtime muted">⏱ {{ fmt(c.timer.elapsed) }}</text>
-                <text class="tbtn on" @tap.stop="resumeTimer(c)">▶ 继续</text>
-                <text class="tbtn" @tap.stop="cancelTimer(c)">⏹ 取消</text>
-              </template>
-              <template v-else>
-                <text class="tbtn on" @tap.stop="startTimer(c)">▶ 计时</text>
-              </template>
-            </template>
-            <text class="tbtn" :class="{ done: dinedToday(c) }" @tap.stop="recordOne(c)">
-              {{ dinedToday(c) ? '✓ 已记' : '📝 记一笔' }}
-            </text>
-            <view class="flex-sp"></view>
-            <text class="rm-btn" @tap.stop="removeCand(c)">✕</text>
-          </view>
-        </view>
-      </view>
-      <view class="section-empty" v-else>
-        <text class="empty-tip">还没想好吃啥，从下面「全部菜谱」或推荐里加几道，点「候选」即可，缺的食材会自动进待采购。</text>
-      </view>
-
-      <!-- ============ 按口味筛（独立节标题 + 横滑单行） ============ -->
+      <!-- ============ 按口味筛（独立节标题 + 横滑单行，菜谱/餐厅通用） ============ -->
       <view class="section">
         <view class="sec-tit">按口味筛</view>
         <scroll-view scroll-x class="chips">
@@ -71,65 +25,161 @@
         </scroll-view>
       </view>
 
-      <!-- ============ 全部菜谱：tab 切换（参考 / 我的） ============ -->
+      <!-- ============ 全部：tab 切换（我的菜谱 / 优选餐厅 / 参考菜谱） ============ -->
       <view class="section">
         <view class="rec-tabs">
-          <view class="rec-tab" :class="{ on: tab === 'ref' }" @tap="tab = 'ref'">参考菜谱<text class="rec-tab-cnt">({{ refCount }})</text></view>
           <view class="rec-tab" :class="{ on: tab === 'my' }" @tap="tab = 'my'">我的菜谱<text class="rec-tab-cnt">({{ myCount }})</text></view>
+          <view class="rec-tab" :class="{ on: tab === 'shop' }" @tap="tab = 'shop'">优选餐厅<text class="rec-tab-cnt">({{ shopCount }})</text></view>
+          <view class="rec-tab" :class="{ on: tab === 'ref' }" @tap="tab = 'ref'">参考菜谱<text class="rec-tab-cnt">({{ refCount }})</text></view>
           <view class="flex-sp"></view>
           <text class="newlink" v-if="tab === 'my'" @tap="newRecipe">＋ 新建</text>
+          <text class="newlink" v-else-if="tab === 'shop'" @tap="openForm()">＋ 新增餐厅</text>
         </view>
-        <view class="rec-list">
-          <view class="rec-card" v-for="r in shownRecipes" :key="r.id">
-            <view class="rec-cover" :style="coverStyle(r)" @tap="openDetailById(r)">
-              <text class="rec-em">{{ r.em }}</text>
-            </view>
-            <view class="rec-info" @tap="openDetailById(r)">
-              <view class="rec-name">
-                <text>{{ r.name }}</text>
-                <text class="badge" :class="r.source === 'admin' ? 'b-ref' : 'b-my'">
-                  {{ r.source === 'admin' ? '参考' : '我的' }}
-                </text>
+
+        <!-- 优选餐厅 -->
+        <template v-if="tab === 'shop'">
+          <view class="rec-list">
+            <view class="rec-card" v-for="s in shownShops" :key="s.id">
+              <view class="rec-cover" @tap="openShop(s)">
+                <text class="rec-em">{{ s.icon || '🏪' }}</text>
               </view>
-              <view class="rec-meta">{{ r.time }}分钟 · {{ r.diff }}</view>
-              <view class="rec-tags">
-                <text class="t-pill" v-for="t in r.tags" :key="t">{{ t }}</text>
+              <view class="rec-info" @tap="openShop(s)">
+                <view class="rec-name">
+                  <text>{{ s.name }}</text>
+                  <text class="badge b-shop">餐厅</text>
+                </view>
+                <view class="rec-meta">{{ s.type }}<text v-if="s.price"> · {{ s.price }}</text><text class="rec-star" v-if="s.star">{{ starStr(s) }}</text></view>
+                <view class="rec-tags">
+                  <text class="t-pill" v-for="(m, i) in shopPills(s)" :key="'p' + i">{{ m }}</text>
+                </view>
               </view>
+              <text class="edit-link" @tap.stop="openForm(s)">✎</text>
+              <text
+                class="pbtn small"
+                :class="{ added: inShopCands(s) }"
+                @tap="toggleShopCand(s)"
+              >{{ inShopCands(s) ? '✓ 已选' : '+ 候选' }}</text>
             </view>
-            <text
-              class="pbtn small"
-              :class="{ added: inCands(r) }"
-              @tap="toggleCand(r)"
-            >{{ inCands(r) ? '✓ 已选' : '+ 候选' }}</text>
           </view>
-        </view>
-        <view class="section-empty" v-if="!shownRecipes.length">
-          <text class="empty-tip">{{ tab === 'ref' ? '暂无参考菜谱' : '还没有自己的菜谱，点右上角「＋ 新建」开始吧' }}</text>
-        </view>
+          <view class="section-empty" v-if="!shownShops.length">
+            <text class="empty-tip">{{ shops.length ? '没有匹配当前口味的餐厅，换个标签试试' : '还没有收藏餐厅，点右上角「＋ 新增餐厅」开始吧' }}</text>
+          </view>
+        </template>
+
+        <!-- 我的菜谱 / 参考菜谱 -->
+        <template v-else>
+          <view class="rec-list">
+            <view class="rec-card" v-for="r in shownRecipes" :key="r.id">
+              <view class="rec-cover" :style="coverStyle(r)" @tap="openDetailById(r)">
+                <text class="rec-em">{{ r.em }}</text>
+              </view>
+              <view class="rec-info" @tap="openDetailById(r)">
+                <view class="rec-name">
+                  <text>{{ r.name }}</text>
+                  <text class="badge" :class="r.source === 'admin' ? 'b-ref' : 'b-my'">
+                    {{ r.source === 'admin' ? '参考' : '我的' }}
+                  </text>
+                </view>
+                <view class="rec-meta">{{ r.time }}分钟 · {{ r.diff }}<text class="rec-star" v-if="r.star">{{ starStr(r) }}</text></view>
+                <view class="rec-tags">
+                  <text class="t-pill" v-for="t in r.tags" :key="t">{{ t }}</text>
+                </view>
+              </view>
+              <text
+                class="pbtn small"
+                :class="{ added: inCands(r) }"
+                @tap="toggleCand(r)"
+              >{{ inCands(r) ? '✓ 已选' : '+ 候选' }}</text>
+            </view>
+          </view>
+          <view class="section-empty" v-if="!shownRecipes.length">
+            <text class="empty-tip">{{ tab === 'ref' ? '暂无参考菜谱' : '还没有自己的菜谱，点右上角「＋ 新建」开始吧' }}</text>
+          </view>
+        </template>
       </view>
 
       <view class="tab-pad"></view>
     </scroll-view>
+
+    <!-- 新增 / 编辑餐厅共用表单（原独立餐厅页已并入本 tab） -->
+    <view class="mask" v-if="formShow" @tap="formShow = false"></view>
+    <view class="form" v-if="formShow">
+      <view class="form-head">
+        <text class="form-title">{{ form.id ? '编辑餐厅' : '新增餐厅' }}</text>
+        <text class="close" @tap="formShow = false">✕</text>
+      </view>
+      <!-- emoji 候选 + 实时预览 -->
+      <view class="f-row">
+        <text class="f-l">图标</text>
+        <view class="form-emoji-row">
+          <text class="form-emoji-preview">{{ form.icon || '🏪' }}</text>
+          <view class="form-emoji-grid">
+            <view v-for="e in shopIcons" :key="e" class="form-emoji-cell" :class="{ on: form.icon === e }" @tap="form.icon = e">{{ e }}</view>
+          </view>
+        </view>
+      </view>
+      <view class="f-row"><text class="f-l">名称</text><input class="f-i" v-model="form.name" placeholder="餐厅名" /></view>
+      <view class="f-row"><text class="f-l">类型</text><input class="f-i" v-model="form.type" placeholder="中餐/西餐…" /></view>
+      <view class="f-row"><text class="f-l">人均</text><input class="f-i" v-model="form.price" placeholder="¥" /></view>
+      <view class="f-row"><text class="f-l">到达耗时(分)</text><input class="f-i" type="number" v-model.number="form.arr_min" /></view>
+      <view class="f-row"><text class="f-l">交通工具</text><input class="f-i" v-model="form.transport" placeholder="步行/骑车/开车" /></view>
+      <view class="f-row star-row">
+        <text class="f-l">星级</text>
+        <view class="stars">
+          <text
+            v-for="i in 5"
+            :key="i"
+            class="st"
+            :class="{ on: i <= (form.star || 0) }"
+            @tap="form.star = form.star === i ? 0 : i"
+          >★</text>
+        </view>
+      </view>
+      <view class="f-row"><text class="f-l">招牌菜</text><input class="f-i" v-model="form.mustText" placeholder="逗号分隔" /></view>
+      <view class="f-row">
+        <text class="f-l">口味标签</text>
+        <view class="ftags">
+          <text
+            class="fchip"
+            :class="{ on: (form.tags || []).includes(t) }"
+            v-for="t in allTasteTags"
+            :key="t"
+            @tap="toggleFormTag(t)"
+          >{{ t }}</text>
+          <text class="fchip-tip" v-if="!allTasteTags.length">暂无标签，去「我的 → 口味标签」维护</text>
+        </view>
+      </view>
+      <view class="f-row"><text class="f-l">备注</text><input class="f-i" v-model="form.note" placeholder="选填，餐厅详情页显示" /></view>
+      <view class="form-foot">
+        <text class="pbtn" @tap="saveShop">保存</text>
+        <text class="pbtn ghost danger" v-if="form.id" @tap="delShop">删除</text>
+      </view>
+    </view>
 
     <custom-tab current="recipe" />
   </view>
 </template>
 
 <script>
-import { recipeApi, candidateApi, recordApi, tasteApi } from '@/api'
+import { recipeApi, candidateApi, tasteApi, shopApi, configApi } from '@/api'
+
+const emptyShopForm = () => ({
+  id: null, name: '', type: '中餐', price: '', arr_min: 0, transport: '步行', mustText: '', star: 0, icon: '🏪', note: '', tags: []
+})
 
 export default {
   data() {
     return {
-      cands: [],        // 吃这些候选（含 timer）
+      cands: [],        // 吃这些候选（用于 ✓已选 状态）
       recipes: [],      // 全部菜谱
-      records: [],      // 饮食记录（用于「记一笔」当日去重）
-      tab: 'ref',       // 当前 tab：ref=参考菜谱 / my=我的菜谱
+      shops: [],        // 收藏餐厅（优选餐厅 tab）
+      tab: 'my',       // 当前 tab：my=我的菜谱（默认） / shop=优选餐厅 / ref=参考菜谱
       selKey: '',       // 当前筛选：'' 全部 / tag 名
       filterList: [],   // 横滑筛选项 [{key,label}]
       allTasteTags: [], // 用户维护的口味标签全量（来自 tasteApi）
-      tick: null,       // 计时间隔句柄
-      today: ''         // 今天日期 YYYY-MM-DD
+      formShow: false,  // 餐厅新增/编辑表单弹层
+      form: emptyShopForm(),
+      shopIcons: []     // 餐厅 emoji 候选池（configApi）
     }
   },
   computed: {
@@ -140,8 +190,14 @@ export default {
       if (!this.selKey) return list
       return list.filter((r) => (r.tags || []).includes(this.selKey))
     },
+    // 优选餐厅：按 selKey 筛口味标签
+    shownShops() {
+      if (!this.selKey) return this.shops
+      return this.shops.filter((s) => (s.tags || []).includes(this.selKey))
+    },
     refCount() { return this.recipes.filter((r) => r.source === 'admin').length },
-    myCount() { return this.recipes.filter((r) => r.source === 'my').length }
+    myCount() { return this.recipes.filter((r) => r.source === 'my').length },
+    shopCount() { return this.shops.length }
   },
   watch: {
     // tab 切换：重置筛选关键字 + 重建 filterList（只聚合当前 tab 的 tag）
@@ -150,29 +206,22 @@ export default {
       this.buildFilterList()
     }
   },
+  onLoad(q) {
+    // 支持 ?tab=shop 直达优选餐厅（如「我的」页收藏餐厅入口）
+    if (q && q.tab) this.tab = q.tab
+  },
   onShow() {
-    this.today = new Date().toISOString().slice(0, 10)
     this.load()
-    // 启动实时走表：每秒对 running 的候选 elapsed+1（与后端同公式，保持一致）
-    this.tick = setInterval(() => {
-      this.cands.forEach((c) => {
-        if (c.timer && c.timer.running) c.timer.elapsed += 1
-      })
-    }, 1000)
-  },
-  onHide() {
-    clearInterval(this.tick)
-  },
-  onUnload() {
-    clearInterval(this.tick)
   },
   methods: {
     async load() {
       try {
-        const [cands, recipes, records, tags] = await Promise.all([candidateApi.list(), recipeApi.list(), recordApi.list(), tasteApi.list().catch(() => [])])
+        const [cands, recipes, tags, shops, pool] = await Promise.all([candidateApi.list(), recipeApi.list(), tasteApi.list().catch(() => []), shopApi.list().catch(() => []), configApi.get('shop_icon_pool').catch(() => ({ value: '' }))])
         this.cands = cands
         this.recipes = recipes
-        this.records = records
+        this.shops = shops || []
+        // 餐厅 emoji 候选池（configApi.get 返回 {key,value}，取 .value）
+        this.shopIcons = (pool.value || '🏪,🍜,🍲,🍣,🏮,🥟,🍢,🌮,🍕,🥘,🍱,🍛').split(/[,，]/).map((x) => x.trim()).filter(Boolean)
         // 缓存用户维护的口味标签名（用于筛选 chip + recipe-edit 的 tag 候选）
         this.allTasteTags = (tags || []).map((t) => t.name).filter(Boolean)
         this.buildFilterList()
@@ -180,40 +229,19 @@ export default {
         uni.showToast({ title: e.message, icon: 'none' })
       }
     },
-    // 组装横滑筛选项：「全部」+ 用户维护的口味标签 + 菜谱实际用到的其他 tag
+    // 组装横滑筛选项：「全部」+ 用户维护的口味标签 + 当前 tab 内容实际用到的 tag
     buildFilterList() {
       const list = [{ key: '', label: '全部' }]
-      const source = this.tab === 'ref' ? 'admin' : 'my'
-      const sourceRecipes = this.recipes.filter((r) => r.source === source)
       const keys = new Set([''])
       // 1. 用户维护的口味标签优先
       this.allTasteTags.forEach((t) => { if (!keys.has(t)) { keys.add(t); list.push({ key: t, label: t }) } })
-      // 2. 菜谱实际用到的 tag 补齐
-      sourceRecipes.forEach((r) => (r.tags || []).forEach((t) => { if (!keys.has(t)) { keys.add(t); list.push({ key: t, label: t }) } }))
+      // 2. 当前 tab 内容实际用到的 tag 补齐
+      const source = this.tab === 'ref' ? 'admin' : 'my'
+      const items = this.tab === 'shop'
+        ? this.shops
+        : this.recipes.filter((r) => r.source === source)
+      items.forEach((r) => (r.tags || []).forEach((t) => { if (!keys.has(t)) { keys.add(t); list.push({ key: t, label: t }) } }))
       this.filterList = list
-    },
-    fmt(sec) {
-      sec = Math.max(0, Math.floor(sec))
-      const h = String(Math.floor(sec / 3600)).padStart(2, '0')
-      const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0')
-      const s = String(sec % 60).padStart(2, '0')
-      return `${h}:${m}:${s}`
-    },
-    // —— 「记一笔」：当天已记录则置灰，样式与原型 recBtn 一致 ——
-    dinedToday(c) {
-      // 相同菜名在当天已有记录即视为已记（对齐原型按 name+当天去重）
-      return this.records.some((r) => r.date === this.today && r.name === c.name)
-    },
-    async recordOne(c) {
-      if (this.dinedToday(c)) return
-      // 类型：菜谱→自己做 cook，餐厅→外卖 out
-      const type = c.kind === 'shop' ? 'out' : 'cook'
-      try {
-        await recordApi.create({ name: c.name, date: this.today, type })
-        await this.load()
-      } catch (e) {
-        uni.showToast({ title: e.message, icon: 'none' })
-      }
     },
     inCands(r) {
       return this.cands.some((c) => c.kind === 'recipe' && c.ref_id === r.id)
@@ -222,8 +250,17 @@ export default {
     coverStyle(r) {
       return { background: r.coverGrad || '' }
     },
+    // 喜好星级文本：「 · ★★★☆☆」；未评（0 星）不显示
+    starStr(r) {
+      const n = r.star || 0
+      return n > 0 ? ' · ' + '★'.repeat(n) + '☆'.repeat(5 - n) : ''
+    },
     openDetailById(r) {
       uni.navigateTo({ url: `/pages/recipe-detail/recipe-detail?id=${r.id}` })
+    },
+    // 餐厅卡标签 pill：口味标签在前，招牌菜补位（合计最多 4 个）
+    shopPills(s) {
+      return [...(s.tags || []), ...(s.must || [])].slice(0, 4)
     },
     // —— 候选：加入 / 移除（后端处理待采购代入与回退）——
     async toggleCand(r) {
@@ -247,38 +284,67 @@ export default {
         uni.showToast({ title: e.message, icon: 'none' })
       }
     },
-    // —— 计时：多道并行，行内操作 ——
-    async startTimer(c) {
-      await candidateApi.timerStart(c.id)
-      await this.load()
+    newRecipe() {
+      uni.navigateTo({ url: '/pages/recipe-edit/recipe-edit' })
     },
-    async resumeTimer(c) {
-      await candidateApi.timerStart(c.id)
-      await this.load()
+    // —— 优选餐厅：详情 / 新增编辑表单 ——
+    openShop(s) {
+      uni.navigateTo({ url: `/pages/shop-detail/shop-detail?id=${s.id}` })
     },
-    async pauseTimer(c) {
+    openForm(s) {
+      if (s) this.form = { ...emptyShopForm(), ...s, tags: s.tags || [], mustText: (s.must || []).join('、') }
+      else this.form = emptyShopForm()
+      this.formShow = true
+    },
+    // 表单内切换口味标签（多选）
+    toggleFormTag(t) {
+      const tags = this.form.tags || []
+      this.form = { ...this.form, tags: tags.includes(t) ? tags.filter((x) => x !== t) : [...tags, t] }
+    },
+    async saveShop() {
+      const data = {
+        name: this.form.name, type: this.form.type, price: this.form.price,
+        arr_min: this.form.arr_min, transport: this.form.transport, star: this.form.star,
+        must: this.form.mustText ? this.form.mustText.split(/[，,、]/).map((x) => x.trim()).filter(Boolean) : [],
+        note: this.form.note || '',
+        icon: this.form.icon || '🏪',
+        tags: this.form.tags || []
+      }
+      if (!data.name) return uni.showToast({ title: '请输入名称', icon: 'none' })
       try {
-        await candidateApi.timerPause(c.id)
+        if (this.form.id) await shopApi.update(this.form.id, data)
+        else await shopApi.create(data)
+        this.formShow = false
         await this.load()
+      } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
+    },
+    // 删除餐厅：二次确认，失败要提示
+    delShop() {
+      uni.showModal({
+        title: '删除餐厅', content: `删除「${this.form.name}」？删除后不可恢复。`, confirmText: '删除', confirmColor: '#e64340',
+        success: async (res) => {
+          if (!res.confirm) return
+          try {
+            await shopApi.del(this.form.id)
+            this.formShow = false
+            await this.load()
+          } catch (e) { uni.showToast({ title: e.message || '删除失败', icon: 'none' }) }
+        },
+      })
+    },
+    inShopCands(s) {
+      return this.cands.some((c) => c.kind === 'shop' && c.ref_id === s.id)
+    },
+    // 餐厅候选只进「吃这些」，不参与采购计算
+    async toggleShopCand(s) {
+      if (this.inShopCands(s)) return uni.showToast({ title: '已在吃这些', icon: 'none' })
+      try {
+        await candidateApi.add('shop', s.id)
+        await this.load()
+        uni.showToast({ title: '已加入吃这些', icon: 'success' })
       } catch (e) {
         uni.showToast({ title: e.message, icon: 'none' })
       }
-    },
-    async cancelTimer(c) {
-      await candidateApi.timerCancel(c.id)
-      await this.load()
-    },
-    // —— 详情 / 新建（本轮先占位，后续独立页面）——
-    openDetail(c) {
-      // 从中吃这些进入 → viewOnly（详情显示「开始做」/计时，不显示候选/编辑）
-      if (c.kind === 'recipe' && c.ref_id) {
-        uni.navigateTo({ url: `/pages/recipe-detail/recipe-detail?id=${c.ref_id}&from=eat` })
-      } else if (c.kind === 'shop' && c.ref_id) {
-        uni.navigateTo({ url: `/pages/shop-detail/shop-detail?id=${c.ref_id}` })
-      }
-    },
-    newRecipe() {
-      uni.navigateTo({ url: '/pages/recipe-edit/recipe-edit' })
     }
   }
 }
@@ -299,29 +365,9 @@ export default {
 .section-empty { padding: 40rpx 24rpx; text-align: center; }
 .empty-tip { color: var(--text-2); font-size: 26rpx; }
 
-/* 候选卡（对齐原型 eat-row：第一行 emoji+菜名+徽章，第二行计时/记一笔/✕） */
-.cand { margin-bottom: 16rpx; }
-.cand-top { display: flex; align-items: center; gap: 16rpx; }
-.cand-em { font-size: 48rpx; }
-.cand-name { flex: 1; display: flex; align-items: center; gap: 12rpx; }
-.cand-title { font-size: 30rpx; font-weight: 600; }
-.cand-bottom { display: flex; align-items: center; margin-top: 18rpx; gap: 12rpx; }
 .flex-sp { flex: 1; }
-.rm-btn { color: var(--text-2); font-size: 30rpx; padding: 8rpx; }
-
-/* 计时（原型 tbtn / rtime） */
-.rtime { font-variant-numeric: tabular-nums; font-size: 28rpx; margin-right: 6rpx; }
-.rtime.run { color: var(--brand); font-weight: 600; }
-.rtime.muted { color: var(--text-2); }
-.tbtn {
-  font-size: 24rpx; color: var(--text-2); padding: 8rpx 18rpx;
-  border-radius: 999rpx; box-shadow: inset 0 0 0 2rpx var(--border);
-}
-.tbtn.on { color: var(--brand); box-shadow: inset 0 0 0 2rpx var(--brand); background: var(--brand-soft, #efeaff); }
-.tbtn.done { color: var(--text-2); opacity: .5; box-shadow: none; background: var(--surface); }
 
 .badge { font-size: 20rpx; padding: 2rpx 12rpx; border-radius: 999rpx; }
-.b-recipe { background: #efeaff; color: var(--brand); }
 .b-shop { background: #fff3e0; color: #f57c00; }
 
 /* 节标题（对齐原型 sec-tit） */
@@ -365,6 +411,7 @@ export default {
 .rec-info { flex: 1; min-width: 0; }
 .rec-name { font-size: 30rpx; font-weight: 600; display: flex; align-items: center; gap: 10rpx; }
 .rec-meta { font-size: 22rpx; color: var(--text-2); margin-top: 4rpx; }
+.rec-star { color: #f5a623; }
 .rec-tags { display: flex; gap: 8rpx; margin-top: 8rpx; flex-wrap: wrap; }
 .t-pill { font-size: 20rpx; color: var(--text-2); background: var(--bg); padding: 2rpx 10rpx; border-radius: 999rpx; }
 .pbtn.small { font-size: 24rpx; padding: 10rpx 20rpx; flex-shrink: 0; }
@@ -376,6 +423,38 @@ export default {
 .badge { font-size: 20rpx; padding: 2rpx 12rpx; border-radius: 999rpx; }
 .b-my { background: #e6f6f3; color: #0f766e; }
 .b-ref { background: var(--brand-soft, #efeaff); color: var(--brand); }
+
+/* 餐厅卡：编辑入口 */
+.edit-link { color: var(--brand); font-size: 28rpx; padding: 8rpx; flex-shrink: 0; }
+
+/* 新增/编辑餐厅表单弹层（原餐厅页 form） */
+.mask { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 50; }
+.form { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-radius: 24rpx 24rpx 0 0; padding: 24rpx; z-index: 60; padding-bottom: calc(env(safe-area-inset-bottom) + 24rpx); }
+.form-head { display: flex; justify-content: space-between; align-items: center; }
+.form-title { font-size: 34rpx; font-weight: 700; }
+.close { color: var(--text-2); font-size: 30rpx; }
+.f-row { display: flex; align-items: center; gap: 16rpx; margin-top: 20rpx; }
+.f-l { width: 180rpx; color: var(--text-2); font-size: 26rpx; flex-shrink: 0; }
+.f-i { flex: 1; background: var(--bg); border-radius: 12rpx; height: 76rpx; line-height: 76rpx; padding: 0 16rpx; font-size: 28rpx; box-sizing: border-box; color: var(--text); }
+.star-row { align-items: center; }
+.stars { display: flex; gap: 6rpx; flex: 1; }
+.st { font-size: 48rpx; color: #e4e6ec; line-height: 76rpx; transition: transform .12s; }
+.st.on { color: #f5a623; }
+.st:active { transform: scale(1.15); }
+.form-foot { display: flex; gap: 16rpx; margin-top: 24rpx; }
+.pbtn.danger { background: var(--danger); }
+/* emoji 候选网格：4列，末行半露暗示可下滑 */
+.form-emoji-row { display: flex; align-items: center; gap: 16rpx; flex: 1; min-width: 0; }
+.form-emoji-preview { font-size: 44rpx; width: 80rpx; text-align: center; flex-shrink: 0; }
+.form-emoji-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6rpx; max-height: 90rpx; overflow-y: auto; align-content: start; flex: 1; }
+.form-emoji-cell { height: 52rpx; text-align: center; font-size: 32rpx; line-height: 1; border: 1rpx solid var(--border); border-radius: 8rpx; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+.form-emoji-cell.on { background: var(--brand); border-color: var(--brand); }
+
+/* 表单口味标签多选 chips */
+.ftags { flex: 1; display: flex; flex-wrap: wrap; gap: 10rpx; }
+.fchip { font-size: 24rpx; padding: 8rpx 18rpx; border-radius: 999rpx; background: var(--bg); border: 1rpx solid var(--border); color: var(--text-2); }
+.fchip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.fchip-tip { font-size: 24rpx; color: var(--text-3, #b6b8c0); line-height: 76rpx; }
 
 .tab-pad { height: 40rpx; }
 </style>

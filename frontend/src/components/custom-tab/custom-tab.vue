@@ -26,9 +26,9 @@ export default {
     return {
       tabs: [
         { key: 'index', label: '推荐', emoji: '🎯', path: '/pages/index/index' },
-        { key: 'recipe', label: '菜谱', emoji: '📖', path: '/pages/recipe/recipe' },
+        { key: 'recipe', label: '选菜', emoji: '📖', path: '/pages/recipe/recipe' },
         { key: 'fridge', label: '冰箱', emoji: '🧊', path: '/pages/fridge/fridge' },
-        { key: 'shop', label: '餐厅', emoji: '🏪', path: '/pages/shop/shop' },
+        { key: 'cands', label: '候选', emoji: '📥', path: '/pages/cands/cands' },
         { key: 'mine', label: '我的', emoji: '👤', path: '/pages/mine/mine' }
       ]
     }

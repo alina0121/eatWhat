@@ -10,6 +10,13 @@
     {
       "path": "pages/recipe/recipe",
       "style": {
+        "navigationBarTitleText": "选菜",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/cands/cands",
+      "style": {
         "navigationBarTitleText": "吃这些",
         "navigationStyle": "custom"
       }
@@ -18,13 +25,6 @@
       "path": "pages/fridge/fridge",
       "style": {
         "navigationBarTitleText": "冰箱",
-        "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/shop/shop",
-      "style": {
-        "navigationBarTitleText": "餐厅",
         "navigationStyle": "custom"
       }
     },

@@ -9,6 +9,7 @@
 - JSON 字段（tags / ing / steps / subs / must / arrive 等）以 TEXT 存储，出入自动序列化。
 """
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -22,6 +23,7 @@ SCHEMA = """
 -- 用户（微信登录 + JWT 鉴权，后端用 openid 唯一标识）
 CREATE TABLE IF NOT EXISTS users(
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL DEFAULT '',                 -- 显示名（管理端同名校验、老链路读取仍用）
     openid      TEXT UNIQUE,                              -- 微信 openid（唯一）
     unionid     TEXT NOT NULL DEFAULT '',                 -- 微信 unionid（同主体多 app 共享）
     email       TEXT NOT NULL DEFAULT '',                 -- 绑定邮箱（唯一，空串=未绑定）
@@ -57,12 +59,13 @@ CREATE TABLE IF NOT EXISTS recipes(
     source  TEXT NOT NULL DEFAULT 'my',    -- my | admin
     name    TEXT NOT NULL,
     em      TEXT NOT NULL DEFAULT '🍽',
-    cover   TEXT NOT NULL DEFAULT '',     -- 封面渐变（纯 CSS linear-gradient 字符串，或空=默认轮换），emoji 由 recipes.em 字段独立负责
+    cover   TEXT NOT NULL DEFAULT '',     -- 封面渐变（纯 CSS linear-gradient 字符串，或空=留白），emoji 由 recipes.em 字段独立负责
     time    INTEGER NOT NULL DEFAULT 0,    -- 用时（分钟）
     diff    TEXT NOT NULL DEFAULT '简单',   -- 难度
     tags    TEXT NOT NULL DEFAULT '[]',    -- JSON 数组：口味/标签
     ing     TEXT NOT NULL DEFAULT '[]',    -- JSON 数组：[{name,qty,unit}]
-    steps   TEXT NOT NULL DEFAULT '[]'     -- JSON 数组：步骤文本
+    steps   TEXT NOT NULL DEFAULT '[]',    -- JSON 数组：步骤文本
+    star    INTEGER NOT NULL DEFAULT 0     -- 喜好星级 0-5（列表按其倒序展示）
 );
 
 -- 食材库：双层模型——公共（scope=public）+ 用户私有补录（scope=user）
@@ -199,6 +202,19 @@ CREATE TABLE IF NOT EXISTS weights(
 """
 
 
+def _schema_columns() -> dict:
+    """从 SCHEMA 解析每张表应有的列名集合：{表名: {列名, ...}}。"""
+    tables = {}
+    for m in re.finditer(r"CREATE TABLE IF NOT EXISTS\s+(\w+)\s*\((.*?)\);", SCHEMA, re.S):
+        cols = set()
+        for line in m.group(2).splitlines():
+            line = line.strip().rstrip(",")
+            if line and line.split()[0].isidentifier():
+                cols.add(line.split()[0])
+        tables[m.group(1)] = cols
+    return tables
+
+
 def get_conn() -> sqlite3.Connection:
     """新建一个数据库连接（每请求一个），已配置 Row 工厂与外键约束。"""
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -208,63 +224,23 @@ def get_conn() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """初始化数据库：建表 + 写默认配置与管理员。可重复调用（幂等）。"""
+    """初始化数据库：建表 + 写默认配置与管理员。可重复调用（幂等）。
+
+    表结构一律以 SCHEMA 为准：现有表与 SCHEMA 列不一致（缺列或多列）
+    就整表删除重建，不做历史数据迁移——结构不适配的旧数据直接丢弃。
+    """
     conn = get_conn()
     try:
+        expected = _schema_columns()
+        existing = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        for tbl, cols in expected.items():
+            if tbl in existing:
+                actual = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()}
+                if actual != cols:
+                    conn.execute(f"DROP TABLE {tbl}")
         conn.executescript(SCHEMA)
-        # 迁移：老库 recipes 表缺 cover 列（新库建表时已带，这里幂等补列）
-        _cols = {r[1] for r in conn.execute("PRAGMA table_info(recipes)").fetchall()}
-        if "cover" not in _cols:
-            conn.execute("ALTER TABLE recipes ADD COLUMN cover TEXT NOT NULL DEFAULT ''")
-        # 迁移：老库 ingredients 表缺 icon 列
-        _icols = {r[1] for r in conn.execute("PRAGMA table_info(ingredients)").fetchall()}
-        if "icon" not in _icols:
-            conn.execute("ALTER TABLE ingredients ADD COLUMN icon TEXT NOT NULL DEFAULT ''")
-        # shops 表缺 icon 列 → 补上
-        _scols = {r[1] for r in conn.execute("PRAGMA table_info(shops)").fetchall()}
-        if "icon" not in _scols:
-            conn.execute("ALTER TABLE shops ADD COLUMN icon TEXT NOT NULL DEFAULT '🏪'")
-        # 迁移：多用户隔离。这 7 张表原来没有 user_id（全站共用一份数据），
-        # 补列时默认值取 1 —— 历史数据统一归到 1 号账号，之后的读写才按登录用户隔离。
-        for _tbl in ("recipes", "shops", "diners", "tips", "records", "weights", "eat_inbox"):
-            _tcols = {r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()}
-            if _tcols and "user_id" not in _tcols:
-                conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1")
-        # users 表迁移：老表只有 id/name/role，补上微信登录所需列
-        _ucols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
-        for _col, _typ, _def in [
-            ("openid", "TEXT", ""),
-            ("unionid", "TEXT NOT NULL DEFAULT ''", ""),
-            ("email", "TEXT NOT NULL DEFAULT ''", ""),
-            ("nickname", "TEXT NOT NULL DEFAULT ''", ""),
-            ("avatar", "TEXT NOT NULL DEFAULT ''", ""),
-            ("created_at", "INTEGER NOT NULL DEFAULT 0", ""),
-            ("last_seen", "INTEGER NOT NULL DEFAULT 0", ""),
-        ]:
-            if _col not in _ucols:
-                conn.execute(f"ALTER TABLE users ADD COLUMN {_col} {_typ}")
-        # 老数据 name → nickname（有则迁过去）
-        if "name" in _ucols and "nickname" in _ucols:
-            conn.execute("UPDATE users SET nickname = name WHERE nickname='' AND name IS NOT NULL")
-            conn.execute("UPDATE users SET name = '' WHERE name IS NOT NULL")
-        # openid 唯一索引：老库是用 ALTER 补的 openid 列，不带 UNIQUE 约束，
-        # 这里显式补一个唯一索引，保证「一个微信 openid 只对应一个账号」。
-        # 用 try 包住：万一历史数据里有重复 openid，不能让整个启动挂掉。
-        try:
-            conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_openid ON users(openid)"
-            )
-        except Exception:
-            pass
-        # 给老 id=1 的用户补个 mock openid（让现有数据继续可见）
-        row1 = conn.execute("SELECT id FROM users WHERE id=1").fetchone()
-        if not row1:
-            conn.execute(
-                "INSERT INTO users(id, openid, nickname, role, created_at, last_seen) "
-                "VALUES(1, 'dev_default', '我', 'user', 0, 0)"
-            )
-        elif not conn.execute("SELECT openid FROM users WHERE id=1").fetchone()[0]:
-            conn.execute("UPDATE users SET openid='dev_default' WHERE id=1")
         # 默认配置：审核开关（1 开 0 关）、临期阈值天数
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('audit_enabled','1')")
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('expiry_threshold_days','3')")

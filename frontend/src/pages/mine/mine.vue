@@ -36,7 +36,7 @@
           <view class="sc" @tap="nav('/pages/recipe/recipe')">
             <text class="st-num">{{ myRecipes }}</text><text class="st-lab">我的菜谱</text>
           </view>
-          <view class="sc" @tap="nav('/pages/shop/shop')">
+          <view class="sc" @tap="nav('/pages/recipe/recipe?tab=shop')">
             <text class="st-num">{{ shopCount }}</text><text class="st-lab">收藏餐厅</text>
           </view>
         </view>

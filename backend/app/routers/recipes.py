@@ -36,6 +36,7 @@ class RecipeIn(BaseModel):
     tags: List[str] = []
     ing: List[Ing] = []
     steps: List[str] = []
+    star: int = 0             # 喜好星级 0-5，列表按其倒序展示
 
 
 class RecipePatch(BaseModel):
@@ -47,6 +48,7 @@ class RecipePatch(BaseModel):
     tags: Optional[List[str]] = None
     ing: Optional[List[Ing]] = None
     steps: Optional[List[str]] = None
+    star: Optional[int] = None
 
 
 def _get(conn: Connection, rid: int):
@@ -89,17 +91,17 @@ def list_recipes(source: Optional[str] = None,
     """
     if source == "admin":
         rows = conn.execute(
-            "SELECT * FROM recipes WHERE source='admin' ORDER BY id DESC"
+            "SELECT * FROM recipes WHERE source='admin' ORDER BY star DESC, id DESC"
         ).fetchall()
     elif source == "my":
         rows = conn.execute(
-            "SELECT * FROM recipes WHERE source='my' AND user_id=? ORDER BY id DESC",
+            "SELECT * FROM recipes WHERE source='my' AND user_id=? ORDER BY star DESC, id DESC",
             (user,),
         ).fetchall()
     else:
         rows = conn.execute(
             "SELECT * FROM recipes WHERE source='admin' OR (source='my' AND user_id=?) "
-            "ORDER BY id DESC",
+            "ORDER BY star DESC, id DESC",
             (user,),
         ).fetchall()
     return [_enrich_cover(conn, row_to_dict(r)) for r in rows]
@@ -123,12 +125,12 @@ def create_recipe(body: RecipeIn,
     if body.source == "my" and _check_name_unique(conn, body.name, user):
         raise HTTPException(409, "我的菜谱已存在同名，请换个菜名")
     cur = conn.execute(
-        "INSERT INTO recipes(user_id,source,name,em,cover,time,diff,tags,ing,steps) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO recipes(user_id,source,name,em,cover,time,diff,tags,ing,steps,star) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         (
             user, body.source, body.name, body.em, body.cover, body.time, body.diff,
             jdump(body.tags), jdump([i.model_dump() for i in body.ing]),
-            jdump(body.steps),
+            jdump(body.steps), max(0, min(5, body.star)),
         ),
     )
     return {"id": cur.lastrowid, "ok": True}
@@ -157,6 +159,8 @@ def update_recipe(rid: int, body: RecipePatch,
         data["ing"] = jdump([i.model_dump() if hasattr(i, "model_dump") else i for i in data["ing"]])
     if "steps" in data:
         data["steps"] = jdump(data["steps"])
+    if "star" in data:
+        data["star"] = max(0, min(5, int(data["star"])))   # 喜好星级限制在 0-5
     if not data:
         raise HTTPException(400, "没有可更新的字段")
     sets = ", ".join(f"{k}=?" for k in data)

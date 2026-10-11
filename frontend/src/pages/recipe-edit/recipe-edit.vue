@@ -57,6 +57,15 @@
         </view>
       </view>
 
+      <!-- 喜好星级：五星评级，列表按星级倒序展示 -->
+      <view class="add-card">
+        <text class="flabel">喜好 <text class="t-12">五星评级，星级高的排前面</text></text>
+        <view class="stars">
+          <text v-for="i in 5" :key="i" class="st" :class="{ on: i <= star }"
+                @tap="star = star === i ? 0 : i">★</text>
+        </view>
+      </view>
+
       <!-- 口味标签（可多选） -->
       <view class="add-card">
         <text class="flabel">口味标签 <text class="t-12">可多选</text></text>
@@ -148,6 +157,7 @@ export default {
       timeOpts, diffOpts,
       tagOpts: [],  // 运行时从 tasteApi 读
       form: { name: '', diff: '简单', time: 10 },
+      star: 0,           // 喜好星级 0-5（点同一颗星清零，列表按其倒序）
       tags: [],
       pool: [],           // 我的食材 [{name, cat}]
       cats: [],           // 大类列表（来自食材库维护，含空大类），顺序可变
@@ -278,6 +288,7 @@ export default {
     async load() {
       const r = await recipeApi.get(this.id)
       this.form = { name: r.name, diff: r.diff, time: r.time || 10 }
+      this.star = r.star || 0    // 回填喜好星级
       // cover 直接存渐变字符串（旧 "emoji|grad" 格式兼容：取 | 后半段）
       let rawCover = r.cover || ''
       if (rawCover.includes('|')) rawCover = rawCover.split('|', 1)[1] || ''
@@ -326,6 +337,7 @@ export default {
         cover: this.coverGrad || '',
         time: this.form.time || 10,
         diff: this.form.diff,
+        star: this.star || 0,
         tags: this.tags,
         ing: this.selNames.map((n) => ({ name: n, qty: (this.selMap[n] && this.selMap[n].qty) || 1, unit: (this.selMap[n] && this.selMap[n].unit) || '份' })),
         steps: this.stepText.split('\n').map((x) => x.trim()).filter(Boolean)
@@ -376,6 +388,11 @@ export default {
 .segs { display:flex; gap:10rpx; }
 .seg { flex:1; text-align:center; padding:14rpx 4rpx; border:1rpx solid var(--border); border-radius:14rpx; font-size:26rpx; background:var(--card); white-space:nowrap; overflow:hidden; }
 .seg.on { background:var(--brand); color:#fff; border-color:var(--brand); }
+/* 喜好五星：与餐厅星级一致（点亮 #f5a623，按下微缩放） */
+.stars { display:flex; gap:12rpx; }
+.st { font-size:56rpx; color:#e4e6ec; line-height:1.2; transition:transform .12s; }
+.st.on { color:#f5a623; }
+.st:active { transform:scale(1.15); }
 /* 口味 tag 候选网格：6列 × 最多2行，超出滚动 */
 .seg-tags { display:grid; grid-template-columns:repeat(6, 1fr); gap:10rpx; max-height:200rpx; overflow-y:auto; align-content:start; }
 .seg-tags .seg { font-size:22rpx; padding:8rpx 4rpx; height:56rpx; line-height:40rpx; }

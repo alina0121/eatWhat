@@ -24,7 +24,7 @@
           {{ r.source === 'admin' ? '参考菜谱' : '我的菜谱' }}
         </text>
       </view>
-      <view class="d-meta">🕐 {{ r.time }}分钟 · 🧑‍🍳 {{ r.diff }}</view>
+      <view class="d-meta">🕐 {{ r.time }}分钟 · 🧑‍🍳 {{ r.diff }}<text class="d-star" v-if="r.star">{{ starStr(r) }}</text></view>
       <view class="tags"><text class="t-pill" v-for="t in r.tags" :key="t">{{ t }}</text></view>
 
       <!-- 做法步骤 -->
@@ -115,6 +115,11 @@ export default {
     cover() {
       return { background: (this.r && this.r.coverGrad) || '' }
     },
+    // 喜好星级文本：「 · ★★★☆☆」；未评（0 星）不显示（与列表一致）
+    starStr(r) {
+      const n = (r && r.star) || 0
+      return n > 0 ? ' · ' + '★'.repeat(n) + '☆'.repeat(5 - n) : ''
+    },
     // 在库自动✓：只读状态标识（不参与交互）
     checked(it) {
       // 只读：该食材名是否在冰箱在库存（✓ 表示有）
@@ -191,6 +196,7 @@ export default {
 .d-title { display:flex; align-items:center; gap:14rpx; margin-top:20rpx; }
 .name { font-size:40rpx; font-weight:700; }
 .d-meta { color:var(--text-2); font-size:24rpx; margin-top:8rpx; }
+.d-star { color:#f5a623; }
 .tags { display:flex; gap:10rpx; margin-top:12rpx; }
 .t-pill { font-size:22rpx; background:var(--card); color:var(--brand); padding:4rpx 14rpx; border-radius:999rpx; }
 .badge { font-size:22rpx; padding:3rpx 14rpx; border-radius:999rpx; }
