@@ -1,4 +1,4 @@
-<!-- admin.vue —— 吃啥 · PC 管理端（桌面宽屏：左侧菜单 + 右侧内容区）
+﻿<!-- admin.vue —— 吃啥 · PC 管理端（桌面宽屏：左侧菜单 + 右侧内容区）
   复用现有移动端同一套 API（tipApi/recipeApi/coverApi/ingredientApi/catApi/configApi），
   并新增 adminApi（密码登录 + 统计聚合）。入口在「我的」页仅 PC 宽屏显示，移动端不可见。
   登录口令在配置表 admin_passcode（默认 123456），仅门控管理台，不影响移动端。
@@ -6,13 +6,22 @@
 <template>
   <view class="admin">
     <!-- 顶部 header -->
-    <view class="ahead">
-      <text class="ah-l">🍜 吃啥 · 管理端</text>
+    <view class="ahead" v-if="isAdmin">
+      <text class="ah-l">🍜 管理</text>
+      <!-- 导航 tab 栏（嵌入 header 内） -->
+      <view class="asider">
+        <view class="nav" v-for="m in menus" :key="m.k" :class="{ on: sec === m.k }" @tap="onNav(m)">
+          <text class="nav-ic">{{ m.ic }}</text>
+          <text class="nav-t">{{ m.t }}</text>
+        </view>
+      </view>
       <view class="ah-r">
         <text class="ah-user">{{ curName }}</text>
         <view class="ah-role" :class="{ off: !isAdmin }">{{ isAdmin ? '管理员' : '未登录' }}</view>
-        <text class="ah-back" @tap="back">‹ 返回 App</text>
       </view>
+    </view>
+    <view class="ahead" v-else>
+      <text class="ah-l">🍜 管理</text>
     </view>
 
     <!-- 登录门：密码登录（默认口令 123456，存配置表，改库可换） -->
@@ -21,21 +30,13 @@
       <text class="gate-t">管理端功能需输入管理员口令</text>
       <input class="gate-in" v-model="loginCode" password placeholder="请输入口令" style="text-align:center" />
       <view class="gate-act">
-        <button class="pbtn" @click="doLogin">登 录</button>
+        <view class="pbtn" @tap="doLogin">登 录</view>
       </view>
       <text class="gate-hint">提示：默认口令 123456（后台配置 admin_passcode）</text>
     </view>
 
     <view class="abody" v-if="isAdmin">
-      <!-- 左侧菜单 -->
-      <view class="asider">
-        <view class="nav" v-for="m in menus" :key="m.k" :class="{ on: sec === m.k }" @tap="onNav(m)">
-          <text class="nav-ic">{{ m.ic }}</text>
-          <text class="nav-t">{{ m.t }}</text>
-        </view>
-      </view>
-
-      <!-- 右侧内容区 -->
+      <!-- 内容区 -->
       <view class="acont">
         <!-- ============ 0. 统计（仅公共资源） ============ -->
         <template v-if="sec === 'stats'">
@@ -53,7 +54,7 @@
         <template v-if="sec === 'users'">
           <view class="sec-h">
             <text class="sh-t">用户管理</text>
-            <view class="sec-act"><button class="pbtn" @click="openUserAdd">＋ 新增用户</button></view>
+            <view class="sec-act"><view class="pbtn" @tap="openUserAdd">＋ 新增用户</view></view>
           </view>
           <view class="row card" v-for="u in users" :key="u.id">
             <view class="uico">{{ u.role === 'admin' ? '👑' : '🙂' }}</view>
@@ -64,15 +65,15 @@
             </view>
             <view class="sp"></view>
             <!-- 置灰规则：id=1（内置 admin）所有操作禁；自己这条行全禁（不管当前 role 是什么，自己不能升/降/删自己） -->
-            <button class="pbtn ghost" @click="toggleRole(u)"
+            <view class="pbtn ghost" @tap="toggleRole(u)"
                     :class="{ dis: u.id === 1 || u.id === curAdminId }"
-                    :disabled="u.id === 1 || u.id === curAdminId">
+                    >
               {{ u.role === 'admin' ? '设为普通' : '设为管理' }}
-            </button>
-            <button class="pbtn ghost" @click="editUser(u)" :class="{ dis: u.id === 1 }" :disabled="u.id === 1">✎</button>
-            <button class="pbtn danger" @click="delUser(u)"
+            </view>
+            <view class="pbtn ghost" @tap="editUser(u)" :class="{ dis: u.id === 1 }" >✎</view>
+            <view class="pbtn danger" @tap="delUser(u)"
                     :class="{ dis: u.id === 1 || u.id === curAdminId }"
-                    :disabled="u.id === 1 || u.id === curAdminId">✕</button>
+                    >✕</view>
           </view>
           <text class="none" v-if="!users.length">还没有用户</text>
         </template>
@@ -83,7 +84,7 @@
           <view class="fbar">
             <input class="fsearch" v-model="tipQ" placeholder="搜索标题 / 内容…" />
             <view class="seg">
-              <text v-for="s in tipSts" :key="s.k" class="sell" :class="{ on: tipSt === s.k }" @click="tipSt = s.k">{{ s.t }}</text>
+              <text v-for="s in tipSts" :key="s.k" class="sell" :class="{ on: tipSt === s.k }" @tap="tipSt = s.k">{{ s.t }}</text>
             </view>
             <text class="fcount">共 {{ filterTips.length }} 条</text>
           </view>
@@ -99,12 +100,12 @@
                 <text class="tusr">{{ t.author }}</text>
               </view>
               <view class="tops" v-if="t.status === 'pending'">
-                <button class="pbtn ok" @click="approve(t)">✓ 通过</button>
-                <button class="pbtn danger" @click="reject(t)">✕ 退回</button>
+                <view class="pbtn ok" @tap="approve(t)">✓ 通过</view>
+                <view class="pbtn danger" @tap="reject(t)">✕ 退回</view>
               </view>
             </view>
             <text class="none" v-if="!filterTips.length">暂无可审核的技巧</text>
-            <button class="pbtn ghost more" v-if="filterTips.length > shownTips.length" @click="tipLimit += 20">加载更多（{{ shownTips.length }}/{{ filterTips.length }}）</button>
+            <view class="pbtn ghost more" v-if="filterTips.length > shownTips.length" @tap="tipLimit += 20">加载更多（{{ shownTips.length }}/{{ filterTips.length }}）</view>
           </view>
         </template>
 
@@ -114,7 +115,7 @@
             <text class="sh-t">参考菜谱</text>
             <view class="sec-act">
               <text class="sh-note">可录入 / 编辑 / 删除</text>
-              <button class="pbtn" @click="openModal('ref')">＋ 录入</button>
+              <view class="pbtn" @tap="openModal('ref')">＋ 录入</view>
             </view>
           </view>
           <view class="fbar">
@@ -126,12 +127,12 @@
               <view class="rcover" :style="{ background: r.coverGrad || DEFAULT_GRAD }"><text class="rem">{{ r.em }}</text></view>
               <view class="rinfo"><text class="rn">{{ r.name }}</text><text class="rm">{{ r.time }}分钟 · {{ r.diff }}</text></view>
               <view class="raction">
-                <button class="pbtn ghost" @click="editRef(r)">✎ 编辑</button>
-                <button class="pbtn danger" @click="delRef(r)">✕ 删除</button>
+                <view class="pbtn ghost" @tap="editRef(r)">✎ 编辑</view>
+                <view class="pbtn danger" @tap="delRef(r)">✕ 删除</view>
               </view>
             </view>
             <text class="none" v-if="!filterRefs.length">还没有参考菜谱</text>
-            <button class="pbtn ghost more" v-if="filterRefs.length > shownRefs.length" @click="refLimit += 20">加载更多（{{ shownRefs.length }}/{{ filterRefs.length }}）</button>
+            <view class="pbtn ghost more" v-if="filterRefs.length > shownRefs.length" @tap="refLimit += 20">加载更多（{{ shownRefs.length }}/{{ filterRefs.length }}）</view>
           </view>
         </template>
 
@@ -140,16 +141,16 @@
           <view class="sec-h">
             <text class="sh-t">食材大类</text>
             <text class="sh-s">公共大类池；用户端会自动合并自己补录的</text>
-            <view class="sec-act"><button class="pbtn" @click="openModal('cat')">＋ 新增大类</button></view>
+            <view class="sec-act"><view class="pbtn" @tap="openModal('cat')">＋ 新增大类</view></view>
           </view>
           <view class="row card" v-for="c in cats" :key="c.id">
             <text class="cic">{{ c.icon }}</text>
             <text class="inm">{{ c.name }}</text>
             <view class="sp"></view>
-            <button class="pbtn ghost" @click="moveCat(c, 'up')">↑</button>
-            <button class="pbtn ghost" @click="moveCat(c, 'down')">↓</button>
-            <button class="pbtn ghost" @click="editCat(c)">✎</button>
-            <button class="pbtn danger" @click="delCat(c)">✕</button>
+            <view class="pbtn ghost" @tap="moveCat(c, 'up')">↑</view>
+            <view class="pbtn ghost" @tap="moveCat(c, 'down')">↓</view>
+            <view class="pbtn ghost" @tap="editCat(c)">✎</view>
+            <view class="pbtn danger" @tap="delCat(c)">✕</view>
           </view>
           <text class="none" v-if="!cats.length">还没有公共大类</text>
         </template>
@@ -159,7 +160,7 @@
           <view class="sec-h">
             <text class="sh-t">食材库</text>
             <text class="sh-s">公共食材池；用户补录的不在管理端出现</text>
-            <view class="sec-act"><button class="pbtn" @click="openModal('ing')">＋ 新录</button></view>
+            <view class="sec-act"><view class="pbtn" @tap="openModal('ing')">＋ 新录</view></view>
           </view>
           <view class="grp" v-for="g in ingGroups" :key="g.cat">
             <text class="grp-t">{{ g.cat }}</text>
@@ -167,18 +168,137 @@
               <text class="r-ic">{{ it.icon || catIcon(it.cat) }}</text>
               <text class="inm">{{ it.name }}</text>
               <view class="sp"></view>
-              <button class="pbtn ghost" @click="openIngEdit(it)">✎</button>
-              <button class="pbtn danger" @click="delIng(it)">✕</button>
+              <view class="pbtn ghost" @tap="openIngEdit(it)">✎</view>
+              <view class="pbtn danger" @tap="delIng(it)">✕</view>
             </view>
           </view>
           <text class="none" v-if="!ingredients.length">公共食材库为空</text>
+        </template>
+
+        <!-- ============ 6. 系统配置 ============ -->
+        <template v-if="sec === 'config'">
+          <view class="sec-h">
+            <text class="sh-t">系统配置</text>
+            <text class="sh-s">配置表驱动 · 修改输入框后失焦即自动保存</text>
+          </view>
+
+          <!-- 1. 基础配置 -->
+          <view class="gsec">
+            <text class="g-h">基础配置</text>
+            <view class="cfg-card">
+              <view class="cfg-row">
+                <view class="cfg-rc"><text class="cfg-rt">厨房技巧审核</text><text class="cfg-rs">新增/修改技巧需管理员审核</text></view>
+                <switch :checked="audit" @change="onAudit" />
+              </view>
+              <view class="cfg-row">
+                <view class="cfg-rc"><text class="cfg-rt">临期阈值（天）</text><text class="cfg-rs">在库食材剩余 ≤ 该天数视为临期</text></view>
+                <input class="cfg-num w120" type="number" v-model="expiry" @blur="saveNum('expiry_threshold_days', expiry)" />
+              </view>
+              <view class="cfg-row">
+                <view class="cfg-rc"><text class="cfg-rt">管理员口令</text><text class="cfg-rs">登录管理端使用，保存后立即生效</text></view>
+                <input class="cfg-num w200" v-model="passcode" @blur="save('admin_passcode', passcode)" />
+              </view>
+            </view>
+          </view>
+
+          <!-- 2. 图标池 -->
+          <view class="gsec">
+            <text class="g-h">图标池</text>
+            <text class="g-s">逗号分隔 emoji；录入表单的候选图标从这里取</text>
+            <view class="cfg-card">
+              <view class="cfg-col">
+                <text class="cfg-rt">食材图标池</text>
+                <textarea class="cfg-pool" v-model="ingPool" @blur="savePool('ingredient_icon_pool', 'ingPool', 'ingIcons')" />
+                <view class="cfg-prev"><text v-for="ic in ingIcons" :key="ic" class="cfg-pic">{{ ic }}</text></view>
+              </view>
+              <view class="cfg-col">
+                <text class="cfg-rt">大类图标池</text>
+                <textarea class="cfg-pool" v-model="catPool" @blur="savePool('cat_icon_pool', 'catPool', 'catIcons')" />
+                <view class="cfg-prev"><text v-for="ic in catIcons" :key="ic" class="cfg-pic">{{ ic }}</text></view>
+              </view>
+              <view class="cfg-col">
+                <text class="cfg-rt">菜谱图标池</text>
+                <textarea class="cfg-pool" v-model="recipePool" @blur="savePool('recipe_emoji_pool', 'recipePool', 'recipeIcons')" />
+                <view class="cfg-prev"><text v-for="ic in recipeIcons" :key="ic" class="cfg-pic">{{ ic }}</text></view>
+              </view>
+              <view class="cfg-col">
+                <text class="cfg-rt">餐厅图标池</text>
+                <textarea class="cfg-pool" v-model="shopPool" @blur="savePool('shop_icon_pool', 'shopPool', 'shopIcons')" />
+                <view class="cfg-prev"><text v-for="ic in shopIcons" :key="ic" class="cfg-pic">{{ ic }}</text></view>
+              </view>
+              <view class="cfg-col cfg-col-last">
+                <text class="cfg-rt">封面渐变池</text>
+                <text class="cfg-rs">| 分隔 linear-gradient；菜谱封面预设</text>
+                <textarea class="cfg-pool cfg-pool-grad" v-model="gradPool" @blur="save('cover_grad_pool', gradPool)" />
+                <view class="cfg-prev"><view v-for="(g,i) in gradList" :key="i" class="cfg-pgrad" :style="{ background: g }"></view></view>
+              </view>
+            </view>
+          </view>
+
+          <!-- 3. 邮件服务 -->
+          <view class="gsec">
+            <text class="g-h">邮件服务 · SMTP</text>
+            <text class="g-s">用于发送邮箱验证码（登录 / 绑定 / 注销）。QQ 邮箱填「设置 → 账户 → 开启 SMTP 服务」生成的那串授权码，不是登录密码。</text>
+            <view class="cfg-card">
+              <view class="cfg-row">
+                <view class="cfg-rc"><text class="cfg-rt">服务器 Host</text><text class="cfg-rs">QQ 邮箱：smtp.qq.com</text></view>
+                <input class="cfg-num w220" v-model="smtpHost" @blur="save('smtp_host', smtpHost)" placeholder="smtp.qq.com" />
+              </view>
+              <view class="cfg-row">
+                <view class="cfg-rc"><text class="cfg-rt">端口 Port</text><text class="cfg-rs">465 = SSL，587 = STARTTLS</text></view>
+                <input class="cfg-num w120" type="number" v-model="smtpPort" @blur="save('smtp_port', smtpPort)" placeholder="465" />
+              </view>
+              <view class="cfg-row">
+                <view class="cfg-rc"><text class="cfg-rt">发件邮箱 User</text><text class="cfg-rs">完整邮箱地址</text></view>
+                <input class="cfg-num w260" v-model="smtpUser" @blur="save('smtp_user', smtpUser)" placeholder="your_mail@qq.com" />
+              </view>
+              <view class="cfg-row">
+                <view class="cfg-rc"><text class="cfg-rt">授权码 Pass</text><text class="cfg-rs">邮箱设置里生成的授权码（非登录密码）</text></view>
+                <input class="cfg-num w260" type="password" v-model="smtpPass" @blur="save('smtp_pass', smtpPass)" placeholder="16 位授权码" />
+              </view>
+              <view class="cfg-row">
+                <view class="cfg-rc"><text class="cfg-rt">发件人名称 From</text><text class="cfg-rs">收件人看到的发件人名</text></view>
+                <input class="cfg-num w220" v-model="smtpFrom" @blur="save('smtp_from', smtpFrom)" placeholder="吃啥好呀" />
+              </view>
+              <view class="cfg-row">
+                <view class="cfg-rc"><text class="cfg-rt">验证码有效期（分钟）</text><text class="cfg-rs">超时需重新获取</text></view>
+                <input class="cfg-num w120" type="number" v-model="otpExpire" @blur="saveNum('otp_expire_min', otpExpire)" />
+              </view>
+              <view class="cfg-row">
+                <view class="cfg-rc"><text class="cfg-rt">当前状态</text><text class="cfg-rs">{{ smtpReady ? '已配置，验证码会真实发信' : '未配置完整（缺 Host / User / Pass），验证码降级为后端日志打印' }}</text></view>
+                <text class="cfg-badge" :class="{ on: smtpReady }">{{ smtpReady ? '已启用' : '未启用' }}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- 4. 登录与安全 -->
+          <view class="gsec">
+            <text class="g-h">登录与安全</text>
+            <view class="cfg-card">
+              <view class="cfg-col">
+                <text class="cfg-rt">JWT 签名密钥</text>
+                <text class="cfg-rs">用于签发登录 token，上线务必改成随机长串；改动后已发 token 全部失效</text>
+                <input class="cfg-num cfg-num-full" v-model="jwtSecret" @blur="save('jwt_secret', jwtSecret)" placeholder="随机长字符串" />
+              </view>
+              <view class="cfg-col">
+                <text class="cfg-rt">微信小程序 AppID</text>
+                <text class="cfg-rs">填好后小程序登录走真实 openid（不再 mock）</text>
+                <input class="cfg-num cfg-num-full" v-model="mpAppid" @blur="save('mp_appid', mpAppid)" placeholder="wx1234567890abcdef" />
+              </view>
+              <view class="cfg-col cfg-col-last">
+                <text class="cfg-rt">微信小程序 AppSecret</text>
+                <text class="cfg-rs">微信公众平台「开发 → 开发管理」里获取</text>
+                <input class="cfg-num cfg-num-full" type="password" v-model="mpSecret" @blur="save('mp_secret', mpSecret)" placeholder="AppSecret" />
+              </view>
+            </view>
+          </view>
         </template>
 
       </view>
     </view>
 
     <!-- ============ 通用弹窗（自绘 mask；按 modal.mode 切换表单） ============ -->
-    <view class="mask" v-if="modal.show" @click="closeModal">
+    <view class="mask" v-if="modal.show" @tap="closeModal">
       <view class="dialog" @click.stop>
         <!-- 录入 / 编辑参考菜谱 -->
         <template v-if="modal.mode === 'ref'">
@@ -186,7 +306,7 @@
           <input v-model="form.name" placeholder="菜名 *" class="di" />
           <view class="d-sub">菜品 emoji <text class="t-12">点选候选或手动输入</text></view>
           <view class="icon-grid">
-            <view v-for="ic in recipeIcons" :key="ic" class="icell" :class="{ on: form.em === ic }" @click="form.em = ic">{{ ic }}</view>
+            <view v-for="ic in recipeIcons" :key="ic" class="icell" :class="{ on: form.em === ic }" @tap="form.em = ic">{{ ic }}</view>
           </view>
           <input v-model="form.em" placeholder="或手动输入，如 🍲" class="di" />
           <view class="dl-row"><text class="dl-l">耗时</text><input v-model.number="form.time" type="number" placeholder="分钟" class="di" /></view>
@@ -196,7 +316,7 @@
           <textarea v-model="form.stepsText" placeholder="步骤，每行一步" class="dt" />
           <view class="d-sub">封面渐变 <text class="t-12">点选预设</text></view>
           <view class="g-grid">
-            <view v-for="g in grads" :key="g" class="gcell" :class="{ on: refCoverGrad === g }" :style="{ background: g }" @click="refCoverGrad = g"></view>
+            <view v-for="g in grads" :key="g" class="gcell" :class="{ on: refCoverGrad === g }" :style="{ background: g }" @tap="refCoverGrad = g"></view>
           </view>
         </template>
 
@@ -206,7 +326,7 @@
           <input v-model="form.name" placeholder="大类名，如：豆制品" class="di" />
           <view class="d-sub">图标点选</view>
           <view class="icon-grid">
-            <view v-for="ic in catIcons" :key="ic" class="icell" :class="{ on: form.icon === ic }" @click="form.icon = ic">{{ ic }}</view>
+            <view v-for="ic in catIcons" :key="ic" class="icell" :class="{ on: form.icon === ic }" @tap="form.icon = ic">{{ ic }}</view>
           </view>
         </template>
 
@@ -216,12 +336,12 @@
           <input v-model="form.name" placeholder="食材名，如：老抽" class="di" />
           <view class="d-sub">图标 <text class="t-12">选专属 emoji（空则用大类图标）</text></view>
           <view class="icon-grid">
-            <view class="icell" :class="{ on: !form.icon }" @click="form.icon = ''">✕</view>
-            <view v-for="ic in ingIcons" :key="ic" class="icell" :class="{ on: form.icon === ic }" @click="form.icon = ic">{{ ic }}</view>
+            <view class="icell" :class="{ on: !form.icon }" @tap="form.icon = ''">✕</view>
+            <view v-for="ic in ingIcons" :key="ic" class="icell" :class="{ on: form.icon === ic }" @tap="form.icon = ic">{{ ic }}</view>
           </view>
           <view class="d-sub">归类到大类</view>
           <view class="chip-row">
-            <view v-for="c in cats" :key="c.id" class="chip" :class="{ on: form.cat === c.name }" @click="form.cat = c.name">{{ c.icon }} {{ c.name }}</view>
+            <view v-for="c in cats" :key="c.id" class="chip" :class="{ on: form.cat === c.name }" @tap="form.cat = c.name">{{ c.icon }} {{ c.name }}</view>
           </view>
         </template>
 
@@ -230,14 +350,14 @@
           <text class="d-title">{{ form.id ? '编辑用户' : '新增用户' }}</text>
           <input v-model="form.name" placeholder="用户名 *" class="di" />
           <view class="chip-row">
-            <view class="chip" :class="{ on: form.role === 'user' }" @click="form.role = 'user'">🙂 普通用户</view>
-            <view class="chip" :class="{ on: form.role === 'admin' }" @click="form.role = 'admin'">👑 管理员</view>
+            <view class="chip" :class="{ on: form.role === 'user' }" @tap="form.role = 'user'">🙂 普通用户</view>
+            <view class="chip" :class="{ on: form.role === 'admin' }" @tap="form.role = 'admin'">👑 管理员</view>
           </view>
         </template>
 
         <view class="d-btns">
-          <button class="pbtn ghost" @click="closeModal">取消</button>
-          <button class="pbtn" v-if="['ref','cat','ing','user'].includes(modal.mode)" @click="save">保存</button>
+          <view class="pbtn ghost" @tap="closeModal">取消</view>
+          <view class="pbtn" v-if="['ref','cat','ing','user'].includes(modal.mode)" @tap="save">保存</view>
         </view>
       </view>
     </view>
@@ -261,8 +381,7 @@ export default {
         { k: 'ref', ic: '📚', t: '参考菜谱' },
         { k: 'cat', ic: '🗂️', t: '食材大类' },
         { k: 'ing', ic: '🧺', t: '食材库' },
-        // 系统配置已拆为独立页（系统级参数不与业务数据混排），带 url 的菜单项走页面跳转
-        { k: 'config', ic: '⚙️', t: '系统配置', url: '/pages/admin-config/admin-config' }
+        { k: 'config', ic: '⚙️', t: '系统配置' }
       ],
       DEFAULT_GRAD,
       sec: 'stats', curName: '', isAdmin: false, curAdminId: 0,
@@ -283,7 +402,12 @@ export default {
       ],
       refQ: '', refLimit: 20,
       modal: { show: false, mode: '', id: null },
-      form: {}
+      form: {},
+      // 系统配置（inline 自 admin-config.vue）
+      audit: true, expiry: '3', passcode: '',
+      shopPool: '', shopIcons: [],
+      smtpHost: '', smtpPort: '465', smtpUser: '', smtpPass: '', smtpFrom: '', otpExpire: '10',
+      jwtSecret: '', mpAppid: '', mpSecret: '',
     }
   },
   computed: {
@@ -299,6 +423,9 @@ export default {
         { ic: '⏳', t: '技巧待审', k: c.tips_pending || 0 }
       ]
     },
+    // 系统配置
+    gradList() { return (this.gradPool || '').split('|').map((s) => s.trim()).filter(Boolean) },
+    smtpReady() { return !!(this.smtpHost && this.smtpUser && this.smtpPass) },
     // 技巧：状态筛选 + 关键词
     filterTips() {
       const q = this.tipQ.trim().toLowerCase()
@@ -359,12 +486,51 @@ export default {
       const c = this.cats.find((c) => c.name === catName)
       return (c && c.icon) || '🥗'
     },
-    back() { uni.navigateBack() },
-    // 左侧菜单：带 url 的项跳独立页，其余切换右侧内容区
+    // 顶部导航 tab：切换右侧内容区
     onNav(m) {
-      if (m.url) return uni.navigateTo({ url: m.url })
       this.sec = m.k
+      if (m.k === 'config') this.loadConfigs()
     },
+    // —— 系统配置 ——
+    splitIcons(v) { return (v || '').split(/[,，]/).map((s) => s.trim()).filter(Boolean) },
+    async loadConfigs() {
+      try {
+        const keys = ['audit_enabled', 'expiry_threshold_days', 'admin_passcode',
+          'ingredient_icon_pool', 'cat_icon_pool', 'recipe_emoji_pool', 'shop_icon_pool', 'cover_grad_pool',
+          'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'otp_expire_min',
+          'jwt_secret', 'mp_appid', 'mp_secret']
+        const res = await Promise.all(keys.map((k) => configApi.get(k).catch(() => ({ value: '' }))))
+        const v = {}
+        keys.forEach((k, i) => { v[k] = (res[i] && res[i].value != null) ? String(res[i].value) : '' })
+        this.audit = v.audit_enabled === '1' || v.audit_enabled === 'true'
+        this.expiry = v.expiry_threshold_days || '3'
+        this.passcode = v.admin_passcode
+        this.ingPool = v.ingredient_icon_pool; this.ingIcons = this.splitIcons(this.ingPool)
+        this.catPool = v.cat_icon_pool; this.catIcons = this.splitIcons(this.catPool)
+        this.recipePool = v.recipe_emoji_pool; this.recipeIcons = this.splitIcons(this.recipePool)
+        this.shopPool = v.shop_icon_pool; this.shopIcons = this.splitIcons(this.shopPool)
+        this.gradPool = v.cover_grad_pool
+        this.smtpHost = v.smtp_host; this.smtpPort = v.smtp_port || '465'
+        this.smtpUser = v.smtp_user; this.smtpPass = v.smtp_pass
+        this.smtpFrom = v.smtp_from; this.otpExpire = v.otp_expire_min || '10'
+        this.jwtSecret = v.jwt_secret; this.mpAppid = v.mp_appid; this.mpSecret = v.mp_secret
+      } catch (e) { uni.showToast({ title: e.message || '加载失败', icon: 'none' }) }
+    },
+    async save(key, val) {
+      try { await configApi.set(key, String(val == null ? '' : val).trim()); uni.showToast({ title: '已保存', icon: 'none', duration: 700 }) }
+      catch (e) {
+        const msg = e.message || ''
+        if (msg.indexOf('请先登录') >= 0) {
+          uni.removeStorageSync('eat_admin'); uni.removeStorageSync(request.ADMIN_TOKEN_KEY)
+          uni.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
+          setTimeout(() => uni.reLaunch({ url: '/pages/admin/admin' }), 800); return
+        }
+        uni.showToast({ title: '保存失败：' + msg, icon: 'none' })
+      }
+    },
+    saveNum(key, val) { const n = Number(val); if (!Number.isFinite(n) || n <= 0) return uni.showToast({ title: '请输入正整数', icon: 'none' }); this.save(key, String(n)) },
+    savePool(key, poolField, iconsField) { this[iconsField] = this.splitIcons((this[poolField] || '').trim()); this.save(key, (this[poolField] || '').trim()) },
+    onAudit(e) { this.audit = e.detail.value; configApi.set('audit_enabled', this.audit ? '1' : '0').then(() => uni.showToast({ title: '已保存', icon: 'none', duration: 700 })).catch((err) => uni.showToast({ title: err.message || '保存失败', icon: 'none' })) },
     // —— 登录门 ——
     async doLogin() {
       const code = (this.loginCode || '').trim()
@@ -541,13 +707,22 @@ export default {
 <style lang="scss" scoped>
 /* 桌面管理端：整体用 px 布局（非 rpx），宽度自适应居中留白 */
 .admin { min-height: 100vh; background: #f3f4f7; display: flex; flex-direction: column; }
-.ahead { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; background: #4b3fe3; color: #fff; }
-.ah-l { font-size: 18px; font-weight: 700; }
-.ah-r { display: flex; align-items: center; gap: 12px; }
+.ahead { display: flex; align-items: center; gap: 20px; padding: 16px 24px; background: #4b3fe3; color: #fff; }
+.ah-l { font-size: 18px; font-weight: 700; flex-shrink: 0; }
+/* header 内嵌导航 tab 栏：紧贴 logo 右边 */
+.asider { display: flex; align-items: center; gap: 2px; flex: 1; overflow-x: auto; min-width: 0; }
+.nav { display: flex; align-items: center; gap: 6px; padding: 8px 16px; cursor: pointer; color: rgba(255,255,255,.8); font-size: 14px; border-bottom: 2px solid transparent; white-space: nowrap; flex-shrink: 0; transition: color .15s, border-color .15s, background-color .15s; border-radius: 6px 6px 0 0; }
+.nav:hover { color: #fff; background: rgba(255,255,255,.1); }
+.nav.on { color: #fff; border-bottom-color: #fff; background: rgba(255,255,255,.15); }
+.nav-ic { font-size: 15px; }
+.ah-r { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .ah-user { font-size: 14px; opacity: .9; }
 .ah-role { font-size: 12px; background: #ffd166; color: #4b3fe3; padding: 2px 10px; border-radius: 999px; }
 .ah-role.off { background: #fff2f2; color: #e64340; }
-.ah-back { font-size: 14px; cursor: pointer; padding: 6px 12px; border: 1px solid rgba(255,255,255,.6); border-radius: 8px; }
+
+/* abody 现在是纯内容容器，不再含导航 */
+.abody { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.acont { flex: 1; min-width: 0; overflow: auto; padding: 24px 32px; box-sizing: border-box; }
 
 /* 登录门 */
 .gate { margin: 60px auto; padding: 40px; background: #fff; border: 1px solid #e5e6eb; border-radius: 16px; text-align: center; max-width: 440px; }
@@ -557,13 +732,7 @@ export default {
 .gate-act { margin-top: 24px; }
 .gate-hint { display: block; color: #aaa; font-size: 12px; margin-top: 14px; }
 
-.abody { flex: 1; display: flex; min-height: 0; }
-.asider { width: 200px; flex-shrink: 0; background: #fff; border-right: 1px solid #e5e6eb; padding: 12px 0; }
-.nav { display: flex; align-items: center; gap: 12px; padding: 14px 22px; cursor: pointer; color: #444; font-size: 14px; }
-.nav:hover { background: #f6f5ff; }
-.nav.on { background: #4b3fe3; color: #fff; }
-.nav-ic { font-size: 18px; }
-.acont { flex: 1; min-width: 0; overflow: auto; padding: 24px 32px; box-sizing: border-box; }
+
 
 .sec-h { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
 .sh-t { font-size: 20px; font-weight: 700; }
@@ -588,11 +757,29 @@ export default {
 .sell.on { background: #4b3fe3; color: #fff; }
 .more { display: block; margin: 16px auto 0; }
 
-/* 通用按钮 */
-.pbtn { border: none; background: #4b3fe3; color: #fff; font-size: 13px; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+/* 通用按钮（用 <view> 而非 <button>，彻底规避 uni-button 默认样式/定位/::after 问题）
+   @tap 在 uni-app H5 端会同时映射 click + touchend，小程序端也原生支持。 */
+.pbtn { background: #4b3fe3; color: #fff; font-size: 13px; padding: 8px 16px; border-radius: 8px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: auto; height: auto; line-height: 1.2; white-space: nowrap;
+  margin: 0; text-align: center;
+  flex-shrink: 0; flex-grow: 0; flex-basis: auto; box-sizing: border-box;
+  transition: filter .1s ease-out, background-color .12s ease-out, box-shadow .1s ease-out, color .12s ease-out, border-color .12s ease-out;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+/* 悬停 / 按下反馈（不变形，避免 transform:scale 导致 click 在松手瞬间丢失） */
+.pbtn:hover { filter: brightness(1.08); }
+.pbtn:active { filter: brightness(.86); box-shadow: inset 0 2px 6px rgba(0, 0, 0, .2); }
 .pbtn.ghost { background: #fff; color: #4b3fe3; border: 1px solid #4b3fe3; }
+.pbtn.ghost:hover { background: #f3f1ff; }
+.pbtn.ghost:active { background: #e7e3ff; }
 .pbtn.danger { background: #fff; color: #e64340; border: 1px solid #e64340; }
+.pbtn.danger:hover { background: #fff2f1; }
+.pbtn.danger:active { background: #ffe3e1; }
 .pbtn.ok { background: #07c160; }
+.pbtn.dis { opacity: .5; cursor: not-allowed; pointer-events: none; }
+
+/* 区块头部：给相对定位 + 最小 z-index，防止被下方元素意外盖住 */
+.sec-h { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; position: relative; z-index: 1; }
 
 /* 统计（公共资源卡片） */
 .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
@@ -673,4 +860,33 @@ export default {
 .cover-box { width: 52px; height: 52px; border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 3px solid transparent; box-sizing: border-box; }
 .citem.on .cover-box { border-color: #4b3fe3; }
 .cover-nm { font-size: 11px; color: #888; }
+/* ===== 系统配置 ===== */
+.gsec { margin-bottom: 24px; }
+.g-h { font-size: 16px; font-weight: 700; display: block; margin-bottom: 4px; }
+.g-s { font-size: 12px; color: #999; display: block; margin-bottom: 12px; line-height: 1.6; }
+
+.cfg-card { background: #fff; border: 1px solid #e5e6eb; border-radius: 12px; padding: 4px 20px; }
+
+.cfg-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; }
+.cfg-row + .cfg-row { border-top: 1px solid #e5e6eb; }
+.cfg-rc { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cfg-rt { font-size: 14px; font-weight: 600; color: #333; }
+.cfg-rs { font-size: 12px; color: #999; line-height: 1.5; }
+
+.cfg-col { padding: 14px 0; display: flex; flex-direction: column; gap: 6px; }
+.cfg-col + .cfg-col { border-top: 1px solid #e5e6eb; }
+.cfg-col-last { padding-bottom: 18px; }
+
+.cfg-num { background: #fff; border: 1px solid #d8dae0; border-radius: 8px; height: 32px; line-height: 32px; padding: 0 12px; font-size: 13px; color: #333; box-sizing: border-box; }
+.cfg-num-full { width: 100%; }
+.w120 { width: 120px; } .w200 { width: 200px; } .w220 { width: 220px; } .w260 { width: 260px; }
+
+.cfg-pool { background: #fff; border: 1px solid #d8dae0; border-radius: 8px; width: 100%; box-sizing: border-box; min-height: 55px; padding: 10px 12px; font-size: 12px; color: #333; font-family: monospace; }
+.cfg-pool-grad { min-height: 75px; }
+.cfg-prev { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.cfg-pic { background: #f3f4f7; border-radius: 6px; padding: 2px 8px; font-size: 13px; }
+.cfg-pgrad { width: 28px; height: 17px; border-radius: 4px; }
+
+.cfg-badge { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: #fdecea; color: #c0392b; flex: none; }
+.cfg-badge.on { background: #e8f8ef; color: #0a8f4d; }
 </style>
