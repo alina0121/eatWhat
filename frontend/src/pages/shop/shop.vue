@@ -68,6 +68,7 @@
         </view>
       </view>
       <view class="f-row"><text class="f-l">招牌菜</text><input class="f-i" v-model="form.mustText" placeholder="逗号分隔" /></view>
+      <view class="f-row"><text class="f-l">备注</text><input class="f-i" v-model="form.note" placeholder="选填，餐厅详情页显示" /></view>
       <view class="form-foot">
         <text class="pbtn" @tap="save">保存</text>
         <text class="pbtn ghost danger" v-if="form.id" @tap="del">删除</text>
@@ -82,7 +83,7 @@
 import { shopApi, candidateApi, configApi } from '@/api'
 
 const emptyForm = () => ({
-  id: null, name: '', type: '中餐', price: '', arr_min: 0, transport: '步行', mustText: '', star: 0, icon: '🏪'
+  id: null, name: '', type: '中餐', price: '', arr_min: 0, transport: '步行', mustText: '', star: 0, icon: '🏪', note: ''
 })
 
 export default {
@@ -124,6 +125,7 @@ export default {
         name: this.form.name, type: this.form.type, price: this.form.price,
         arr_min: this.form.arr_min, transport: this.form.transport, star: this.form.star,
         must: this.form.mustText ? this.form.mustText.split(/[，,、]/).map((x) => x.trim()).filter(Boolean) : [],
+        note: this.form.note || '',
         icon: this.form.icon || '🏪'
       }
       if (!data.name) return uni.showToast({ title: '请输入名称', icon: 'none' })

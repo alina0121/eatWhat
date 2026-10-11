@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 候选收件箱「吃这些」路由（核心业务，含 COOK 一致性保证）。
 
@@ -120,7 +120,16 @@ def list_candidates(user: int = Depends(get_optional_user),
     rows = conn.execute(
         "SELECT * FROM eat_inbox WHERE user_id=? ORDER BY id", (user,)
     ).fetchall()
-    return [_enrich_track(row_to_dict(r), conn) for r in rows]
+    out = []
+    for r in rows:
+        d = row_to_dict(r)
+        # 餐厅候选的图标实时跟随餐厅编辑（兼容加入时被硬编码为默认图标的存量记录）
+        if d.get("kind") == "shop":
+            sh = conn.execute("SELECT icon FROM shops WHERE id=?", (d["ref_id"],)).fetchone()
+            if sh and sh["icon"]:
+                d["em"] = sh["icon"]
+        out.append(_enrich_track(d, conn))
+    return out
 
 
 @router.post("")
@@ -142,10 +151,11 @@ def add_candidate(body: CandidateIn,
         name, em = rec["name"], rec["em"]
         subs = _ingest_subs(conn, ref_id, user)
     elif kind == "shop":
-        sh = conn.execute("SELECT name FROM shops WHERE id=?", (ref_id,)).fetchone()
+        sh = conn.execute("SELECT name, icon FROM shops WHERE id=?", (ref_id,)).fetchone()
         if not sh:
             raise HTTPException(404, "餐厅不存在")
-        name, em = sh["name"], "🏪"
+        # 图标跟随餐厅编辑设置（此前硬编码 🏪，导致候选列表显示默认图标）
+        name, em = sh["name"], sh["icon"] or "🏪"
     else:
         raise HTTPException(400, "kind 须为 recipe 或 shop")
 
