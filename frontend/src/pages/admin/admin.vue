@@ -6,7 +6,7 @@
 <template>
   <view class="admin">
     <!-- 顶部 header -->
-    <view class="ahead" v-if="isAdmin">
+    <view class="ahead main" v-if="isAdmin">
       <text class="ah-l">🍜 管理</text>
       <!-- 导航 tab 栏（嵌入 header 内） -->
       <view class="asider">
@@ -889,4 +889,24 @@ export default {
 
 .cfg-badge { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: #fdecea; color: #c0392b; flex: none; }
 .cfg-badge.on { background: #e8f8ef; color: #0a8f4d; }
+
+/* ============ 响应式（必须放样式最末尾：媒体查询不增加优先级，
+   同优先级下后写的基础规则会覆盖它，放中间等于白写） ============ */
+/* 窄屏：隐藏左 logo 和右侧用户名/角色徽章，菜单 tab 栏占满整行显示更多项
+   （只作用于带菜单的主 header；登录门的 header 没有菜单，logo 保留） */
+@media (max-width: 1100px) {
+  .ahead.main .ah-l, .ahead.main .ah-r { display: none; }
+  .ahead.main { padding: 12px; gap: 0; }
+}
+/* 手机端（≤700px）：整页 flex 布局保持不变，只收紧内边距 + KPI 改两列 + 行内按钮换行，
+   避免 4 列 KPI 卡被压扁、一行塞不下多个操作按钮导致溢出错乱 */
+@media (max-width: 700px) {
+  .acont { padding: 14px 12px; }
+  .kpis { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .kpi { padding: 12px 14px; gap: 10px; }
+  .row { flex-wrap: wrap; }               /* 名称一行、操作按钮折到下一行，不再横向溢出 */
+  .fsearch { width: 100%; }               /* 搜索框占满整行 */
+  .rcard { width: 100%; }                 /* 菜谱卡占满整行 */
+  .gate { margin: 30px auto; padding: 24px; }
+}
 </style>
