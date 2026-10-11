@@ -227,8 +227,8 @@ export default {
       })
     },
     nav(url) {
-      // 餐厅/菜谱是 tab 页，用 reLaunch；其余二级页 navigateTo
-      if (url.includes('/shop/shop') || url.includes('/recipe/recipe')) return uni.reLaunch({ url })
+      // 菜谱页是 tab 页，用 reLaunch；其余二级页 navigateTo
+      if (url.includes('/recipe/recipe')) return uni.reLaunch({ url })
       uni.navigateTo({ url })
     },
 
