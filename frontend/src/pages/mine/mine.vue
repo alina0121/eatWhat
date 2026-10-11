@@ -90,7 +90,7 @@
           </view>
           <!-- #ifdef H5 -->
           <!-- 管理端页面仅 H5 存在（见 pages.json 条件编译），故入口也只在 H5 渲染 -->
-          <view class="mrow" v-if="isPc" @tap="nav('/pages/admin/admin')">
+          <view class="mrow" v-if="userRole === 'admin'" @tap="nav('/pages/admin/admin')">
             <text class="ic">🖥️</text><view class="m1"><text class="mt">管理端（PC）</text><text class="ms">审核 · 图库 · 食材 · 餐厅 · 配置</text></view><text class="ar">›</text>
           </view>
           <!-- #endif -->
@@ -145,7 +145,7 @@ import request from '@/utils/request'
 
 export default {
   data() {
-    return { diners: [], curName: '', userRole: '', weekCount: 0, myRecipes: 0, shopCount: 0, isPc: false,
+    return { diners: [], curName: '', userRole: '', weekCount: 0, myRecipes: 0, shopCount: 0,
              allTags: [], tagSel: [],   // 口味标签池（来自 tasteApi）+ 当前选中
              form: { show: false, mode: '', title: '', val: '', hint: '', id: null },
              // 登录态 / 账号弹窗（已登录点资料头直接进 account-settings 页；未登录弹引导）
@@ -156,12 +156,6 @@ export default {
   async onShow() {
     // 昵称占位：未登录时显示「未登录」，避免与任何真实账号混淆
     this.curName = uni.getStorageSync('eat_user') || '未登录'
-    // PC 管理端入口：仅桌面宽屏可见（>=1024px），移动端不显示
-    // 小程序/App 无 window 对象，统一走 uni 的窗口信息 API（各端均支持）
-    try {
-      const info = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
-      this.isPc = !!(info && info.windowWidth >= 1024)
-    } catch (e) { this.isPc = false }
     this.load()
     await this.loadUserEmail()
     // 从登录页带「bind」意图返回 → 直接进「账户设置」页（绑定弹窗在那边自动弹出）

@@ -275,8 +275,13 @@ def update_profile(
     """更新当前用户的昵称/头像。"""
     cols, vals = [], []
     if body.nickname is not None:
+        nick = body.nickname.strip()[:20]
         cols.append("nickname=?")
-        vals.append(body.nickname.strip()[:20])
+        vals.append(nick)
+        # 同步 name 字段：老链路（菜谱/食材作者等）仍有地方读 name，
+        # 保持两个字段一致避免"改了 nickname 但显示还是旧 name"
+        cols.append("name=?")
+        vals.append(nick)
     if body.avatar is not None:
         cols.append("avatar=?")
         vals.append(body.avatar)
