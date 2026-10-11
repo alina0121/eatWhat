@@ -111,9 +111,9 @@ export default {
     },
     onUnload() { if (this._tick) clearInterval(this._tick) },
     back() { uni.navigateBack() },
-    // 大封面背景：优先用所选固定封面渐变（coverGrad）；未选走默认三色渐变
+    // 大封面背景：编辑里选了渐变就用渐变；选「空」就留空白，不再回退默认渐变
     cover() {
-      return { background: (this.r && this.r.coverGrad) || 'linear-gradient(135deg,#4b3fe3,#8b5cf6,#ec4899)' }
+      return { background: (this.r && this.r.coverGrad) || '' }
     },
     // 在库自动✓：只读状态标识（不参与交互）
     checked(it) {

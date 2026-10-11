@@ -124,7 +124,7 @@
           </view>
           <view class="grid">
             <view class="rcard" v-for="r in shownRefs" :key="r.id">
-              <view class="rcover" :style="{ background: r.coverGrad || DEFAULT_GRAD }"><text class="rem">{{ r.em }}</text></view>
+              <view class="rcover" :style="{ background: r.coverGrad || '' }"><text class="rem">{{ r.em }}</text></view>
               <view class="rinfo"><text class="rn">{{ r.name }}</text><text class="rm">{{ r.time }}分钟 · {{ r.diff }}</text></view>
               <view class="raction">
                 <view class="pbtn ghost" @tap="editRef(r)">✎ 编辑</view>
@@ -316,6 +316,7 @@
           <textarea v-model="form.stepsText" placeholder="步骤，每行一步" class="dt" />
           <view class="d-sub">封面渐变 <text class="t-12">点选预设</text></view>
           <view class="g-grid">
+            <view class="gcell gcell-empty" :class="{ on: !refCoverGrad }" @tap="refCoverGrad = ''">空</view>
             <view v-for="g in grads" :key="g" class="gcell" :class="{ on: refCoverGrad === g }" :style="{ background: g }" @tap="refCoverGrad = g"></view>
           </view>
         </template>
@@ -848,6 +849,8 @@ export default {
 .g-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .gcell { aspect-ratio: 1; border-radius: 8px; border: 3px solid transparent; box-sizing: border-box; cursor: pointer; }
 .gcell.on { border-color: #4b3fe3; }
+/* 封面渐变选择器的「空」格：无背景，选中即封面留白 */
+.gcell-empty { display: flex; align-items: center; justify-content: center; background: #f6f6f8; color: #999; font-size: 14px; }
 .icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-height: 280px; overflow-y: auto; align-content: start; }
 .icell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 26px; background: #f6f6f8; border-radius: 8px; border: 2px solid transparent; cursor: pointer; }
 .icell.on { border-color: #4b3fe3; background: #efeaff; }

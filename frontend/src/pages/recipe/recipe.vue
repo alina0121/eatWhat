@@ -118,16 +118,6 @@
 <script>
 import { recipeApi, candidateApi, recordApi, tasteApi } from '@/api'
 
-// 默认封面渐变（未选固定封面时按 id 轮换），与后端默认种子色彩一致
-const WHEEL = [
-  'linear-gradient(135deg,#4b3fe3,#8b5cf6)',
-  'linear-gradient(135deg,#ec4899,#f97316)',
-  'linear-gradient(135deg,#06b6d4,#3b82f6)',
-  'linear-gradient(135deg,#10b981,#a3e635)',
-  'linear-gradient(135deg,#8b5cf6,#d946ef)',
-  'linear-gradient(135deg,#f59e0b,#ef4444)'
-]
-
 export default {
   data() {
     return {
@@ -228,9 +218,9 @@ export default {
     inCands(r) {
       return this.cands.some((c) => c.kind === 'recipe' && c.ref_id === r.id)
     },
-    // 封面背景：优先用所选的固定封面渐变（后端 coverGrad）；未选则按 id 轮换默认渐变
+    // 封面背景：编辑里选了渐变就用渐变；选「空」就留空白，不再回退默认渐变
     coverStyle(r) {
-      return { background: r.coverGrad || WHEEL[(r.id % WHEEL.length)] }
+      return { background: r.coverGrad || '' }
     },
     openDetailById(r) {
       uni.navigateTo({ url: `/pages/recipe-detail/recipe-detail?id=${r.id}` })
