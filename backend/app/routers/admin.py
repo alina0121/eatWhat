@@ -158,3 +158,60 @@ def delete_user(uid: int, conn: Connection = Depends(get_db),
     _get_user(conn, uid)
     conn.execute("DELETE FROM users WHERE id=?", (uid,))
     return {"id": uid, "ok": True}
+
+
+# ============ 会员管理 ============
+# 会员数据在 vip_members / orders（见 app/vip.py 与 db.py）。
+# 管理台能：看会员列表与订单流水、看收入 KPI、手工赠送/取消会员（客服补单用）。
+
+class VipGrant(BaseModel):
+    user_id: int
+    days: int = 30
+
+
+@router.get("/vip")
+def admin_vip(conn: Connection = Depends(get_db),
+              _admin: int = Depends(get_write_user)):
+    """会员总览：KPI + 会员列表（含过期）+ 最近订单流水。"""
+    import time as _t
+    now = int(_t.time())
+    members = [row_to_dict(r) for r in conn.execute(
+        "SELECT u.id, u.nickname, u.name, u.email, m.expires_at "
+        "FROM vip_members m JOIN users u ON u.id = m.user_id "
+        "WHERE m.expires_at > 0 ORDER BY m.expires_at DESC"
+    ).fetchall()]
+    orders = [row_to_dict(r) for r in conn.execute(
+        "SELECT o.out_trade_no, o.user_id, u.nickname, o.plan_id, o.price_fen, "
+        "o.plan_days, o.status, o.env, o.created_at, o.paid_at "
+        "FROM orders o LEFT JOIN users u ON u.id = o.user_id "
+        "ORDER BY o.id DESC LIMIT 100"
+    ).fetchall()]
+    kpi = {
+        "member_count": conn.execute("SELECT COUNT(*) FROM vip_members WHERE expires_at>?", (now,)).fetchone()[0],
+        "expired_count": conn.execute("SELECT COUNT(*) FROM vip_members WHERE expires_at>0 AND expires_at<=?", (now,)).fetchone()[0],
+        "order_count": conn.execute("SELECT COUNT(*) FROM orders WHERE status='paid'").fetchone()[0],
+        "revenue_fen": conn.execute("SELECT COALESCE(SUM(price_fen),0) FROM orders WHERE status='paid'").fetchone()[0],
+        "revenue_ios_fen": conn.execute("SELECT COALESCE(SUM(price_fen),0) FROM orders WHERE status='paid' AND env=1").fetchone()[0],
+    }
+    return {"kpi": kpi, "members": members, "orders": orders}
+
+
+@router.post("/vip/grant")
+def admin_vip_grant(body: VipGrant, conn: Connection = Depends(get_db),
+                    _admin: int = Depends(get_write_user)):
+    """手工赠送会员（客服补单/赔付用）：从当前到期起叠加 days 天。"""
+    if body.days <= 0 or body.days > 3650:
+        raise HTTPException(422, "天数需在 1~3650 之间")
+    _get_user(conn, body.user_id)
+    from app.vip import extend_member
+    until = extend_member(conn, body.user_id, body.days)
+    return {"user_id": body.user_id, "member_until": until, "ok": True}
+
+
+@router.post("/vip/revoke")
+def admin_vip_revoke(body: VipGrant, conn: Connection = Depends(get_db),
+                     _admin: int = Depends(get_write_user)):
+    """取消会员：到期时间清零（即时失效；订单流水保留不删，留痕）。"""
+    _get_user(conn, body.user_id)
+    conn.execute("UPDATE vip_members SET expires_at=0, updated_at=0 WHERE user_id=?", (body.user_id,))
+    return {"user_id": body.user_id, "ok": True}

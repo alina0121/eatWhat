@@ -137,8 +137,20 @@ function req(method, path, data) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data)
         } else {
+          const detail = res.data && res.data.detail
+          // 会员额度/回看限制（403 VIP_REQUIRED）→ 统一弹会员引导，跳会员页
+          if (res.statusCode === 403 && detail && detail.code === 'VIP_REQUIRED') {
+            uni.showModal({
+              title: '会员功能',
+              content: detail.msg || '免费额度已用完，开通会员无限量使用',
+              confirmText: '去开通',
+              success: (r) => { if (r.confirm) uni.navigateTo({ url: '/pages/vip/vip' }) }
+            })
+            reject(new Error(detail.msg || '会员功能'))
+            return
+          }
           const msg = res.data && res.data.detail ? res.data.detail : `请求失败(${res.statusCode})`
-          reject(new Error(msg))
+          reject(new Error(typeof msg === 'object' ? (msg.msg || '请求失败') : msg))
         }
       },
       fail: (e) => reject(new Error(e.errMsg || '网络错误'))

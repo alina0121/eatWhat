@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS users(
     email       TEXT NOT NULL DEFAULT '',                 -- 绑定邮箱（唯一，空串=未绑定）
     nickname    TEXT NOT NULL DEFAULT '',                 -- 昵称（新版 chooseAvatar + nickname input）
     avatar      TEXT NOT NULL DEFAULT '',                 -- 头像 URL（临时链接，微信返回的）
+    signature   TEXT NOT NULL DEFAULT '',                 -- 个性签名（空=前端显示默认「好好吃饭好好生活」）
     role        TEXT NOT NULL DEFAULT 'user',             -- user | admin
     created_at  INTEGER NOT NULL DEFAULT 0,               -- 注册时间戳
     last_seen   INTEGER NOT NULL DEFAULT 0                -- 最近活跃时间戳
@@ -115,15 +116,19 @@ CREATE TABLE IF NOT EXISTS purchase(
 
 -- 候选收件箱（吃这些）：kind=recipe 菜谱 / shop 餐厅
 -- subs：JSON {name: 数量}，记录该候选代号入待采购的量，移除时按量回退，保证 COOK 一致
+-- family_id：0=个人池；>0=家庭空间共享池（成员可见可操作）
+-- creator_id：实际加入人。缺货代入/回退始终记在加者的 fridge/purchase 上（家庭池里 B 删 A 加的 → 回退 A 的待采购）
 CREATE TABLE IF NOT EXISTS eat_inbox(
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id  INTEGER NOT NULL DEFAULT 1,   -- 所属用户：候选/计时都属于创建它的那个人
-    kind     TEXT NOT NULL,                -- recipe | shop
-    ref_id   INTEGER,                      -- 关联菜谱/餐厅 id（可为空）
-    name     TEXT NOT NULL,
-    em       TEXT NOT NULL DEFAULT '🍽',
-    subs     TEXT NOT NULL DEFAULT '{}',   -- 代号入待采购映射
-    added_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL DEFAULT 1,   -- 所属用户：候选/计时都属于创建它的那个人
+    kind       TEXT NOT NULL,                -- recipe | shop
+    ref_id     INTEGER,                      -- 关联菜谱/餐厅 id（可为空）
+    name       TEXT NOT NULL,
+    em         TEXT NOT NULL DEFAULT '🍽',
+    subs       TEXT NOT NULL DEFAULT '{}',   -- 代号入待采购映射
+    family_id  INTEGER NOT NULL DEFAULT 0,   -- 0=个人池；>0=家庭空间共享池
+    creator_id INTEGER NOT NULL DEFAULT 0,   -- 实际加入人（记账用；老数据为 0，回退 user_id）
+    added_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
 -- 多道并行计时：tracks 挂在候选上
@@ -133,6 +138,23 @@ CREATE TABLE IF NOT EXISTS tracks(
     started  TEXT,                         -- 开始时间（ISO）
     paused   INTEGER NOT NULL DEFAULT 0,   -- 已暂停累计秒
     running  INTEGER NOT NULL DEFAULT 1    -- 1 运行中 0 已暂停
+);
+
+-- 家庭空间：共享「吃这些」候选池；6 位邀请码加入（对齐下厨房家庭库交互）
+CREATE TABLE IF NOT EXISTS families(
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    code       TEXT UNIQUE NOT NULL,             -- 6 位大写字母数字邀请码（去掉易混淆 0O1I）
+    name       TEXT NOT NULL,                    -- 家庭名
+    owner_id   INTEGER NOT NULL,                 -- 创建者（退出即解散）
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 家庭成员：一人一家庭（user_id 唯一约束保证；退出后可再加入别的家庭）
+CREATE TABLE IF NOT EXISTS family_members(
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    family_id INTEGER NOT NULL,
+    user_id   INTEGER NOT NULL UNIQUE,
+    joined_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
 -- 餐厅收藏
@@ -151,15 +173,7 @@ CREATE TABLE IF NOT EXISTS shops(
     icon      TEXT NOT NULL DEFAULT '🏪'   -- emoji 图标
 );
 
--- 干饭成员（用餐人）：每人维护口味偏好
-CREATE TABLE IF NOT EXISTS diners(
-    id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL DEFAULT 1,   -- 所属用户：干饭成员按人隔离
-    name    TEXT NOT NULL,
-    tags    TEXT NOT NULL DEFAULT '[]'        -- JSON：口味/忌口/辣度
-);
-
--- 口味标签池：每个用户独立维护自己的标签，菜谱/成员/推荐筛选都从这里取
+-- 口味标签池：每个用户独立维护自己的标签，菜谱/推荐筛选都从这里取
 CREATE TABLE IF NOT EXISTS taste_tags(
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -191,6 +205,30 @@ CREATE TABLE IF NOT EXISTS records(
     type    TEXT NOT NULL DEFAULT 'cook'      -- cook 自己做 | out 餐厅 | delivery 外卖
 );
 
+-- 会员开通记录（不挂 users 表：init_db 对列不一致的表整删重建，动 users 会清空线上用户数据）
+CREATE TABLE IF NOT EXISTS vip_members(
+    user_id    INTEGER PRIMARY KEY,               -- 一人一行
+    expires_at INTEGER NOT NULL DEFAULT 0,        -- 到期时间戳（秒）；> now 即会员
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+-- 会员订单（微信虚拟支付；mock 模式下单即标记已付，联调用）
+CREATE TABLE IF NOT EXISTS orders(
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL,
+    out_trade_no  TEXT UNIQUE NOT NULL,           -- 商户单号
+    plan_id       TEXT NOT NULL,                  -- 对应 vip_plans 里的键（monthly/yearly）
+    price_fen     INTEGER NOT NULL,               -- 下单时快照（分），改配置不影响历史订单
+    plan_days     INTEGER NOT NULL DEFAULT 0,     -- 下单时快照：开通天数
+    status        TEXT NOT NULL DEFAULT 'pending',-- pending | paid | refunded
+    credited      INTEGER NOT NULL DEFAULT 0,     -- 会员时长是否已发放（防对账重放时重复续期）
+    env           INTEGER NOT NULL DEFAULT 0,     -- 0 安卓/其他 / 1 iOS（对账分渠道费率）
+    wx_transaction_id TEXT NOT NULL DEFAULT '',   -- 微信侧单号
+    created_at    INTEGER NOT NULL,
+    paid_at       INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+
 -- 体重记录（含体脂）
 CREATE TABLE IF NOT EXISTS weights(
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -215,6 +253,20 @@ def _schema_columns() -> dict:
     return tables
 
 
+# 增量列迁移：老库启动时用 ALTER TABLE 补新列（必须在整表重建判断**之前**执行）。
+# 否则 SCHEMA 给已有表加列后，下面的列比对会把老表判为「列不一致」而 DROP 重建，
+# 直接清掉用户数据。格式：{表名: [(列名, 列定义), ...]}
+_MIGRATIONS = {
+    "eat_inbox": [
+        ("family_id", "INTEGER NOT NULL DEFAULT 0"),
+        ("creator_id", "INTEGER NOT NULL DEFAULT 0"),
+    ],
+    "users": [
+        ("signature", "TEXT NOT NULL DEFAULT ''"),
+    ],
+}
+
+
 def get_conn() -> sqlite3.Connection:
     """新建一个数据库连接（每请求一个），已配置 Row 工厂与外键约束。"""
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -235,6 +287,15 @@ def init_db() -> None:
         existing = {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()}
+        # 增量迁移先行：给老表补新增列，让下面的列比对通过，避免老表被 DROP 重建清数据
+        for tbl, cols in _MIGRATIONS.items():
+            if tbl in existing:
+                actual = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()}
+                for col_name, col_def in cols:
+                    if col_name not in actual:
+                        conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col_name} {col_def}")
+        # 下线功能残留清理：diners（干饭成员）已移除，老库启动时直接删表（幂等）
+        conn.execute("DROP TABLE IF EXISTS diners")
         for tbl, cols in expected.items():
             if tbl in existing:
                 actual = {r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()}
@@ -270,6 +331,24 @@ def init_db() -> None:
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('smtp_from','吃啥好呀')")
         # 验证码有效期（分钟）：默认给 30，避免 QQ/163 投递延迟时「刚收到就已经过期」
         conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('otp_expire_min','30')")
+        # 会员体系（管理后台「会员与收款」区维护，改完即生效）
+        # vip_enabled：总开关，'0' 时一切限制解除（额度/回看都不生效）
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('vip_enabled','0')")
+        # vip_pay_mode：mock=沙箱（下单即开通，本地/联调用）；wxpay=微信虚拟支付（需在管理后台配 offer_id/pay_key 并完成虚拟支付签约）
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('vip_pay_mode','mock')")
+        # free_quota：免费额度（-1 或缺省 = 该维度不限）
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('free_quota'," + repr(
+            '{"recipes":20,"ingredients":50,"shops":10,"tips":10,'
+            '"records_view_days":60,"weights_view_days":90}'
+        ) + ")")
+        # vip_plans：套餐定义（price_fen 单位为分；days 为开通天数）
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('vip_plans'," + repr(
+            '{"monthly":{"name":"连续包月","price_fen":600,"days":30},'
+            '"yearly":{"name":"年卡","price_fen":4500,"days":365,"hot":1}}'
+        ) + ")")
+        # 微信虚拟支付商户参数（开通后在小程序后台「虚拟支付-基础配置」里拿）
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('wxpay_offer_id','')")
+        conn.execute("INSERT OR IGNORE INTO configs(key,value) VALUES('wxpay_pay_key','')")
         # 默认管理员
         conn.execute("INSERT OR IGNORE INTO users(id,name,role) VALUES(1,'管理员','admin')")
         # 食材大类默认种子：仅当表为空时写入（避免把用户删除/改名的大类复活）

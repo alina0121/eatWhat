@@ -12,5 +12,5 @@ python -m pip install -q -r backend\requirements.txt
 Write-Host "==> [3/4] 初始化数据库 + 演示数据" -ForegroundColor Cyan
 python backend\seed_demo.py
 
-Write-Host "==> [4/4] 启动服务  http://localhost:8000/" -ForegroundColor Green
+Write-Host "==> [4/4] 启动服务  http://localhost:8001/" -ForegroundColor Green
 python backend\run.py

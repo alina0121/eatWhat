@@ -47,14 +47,6 @@ def main():
             )
             print("已写入在库 x%d" % len(items))
 
-        # ---- 干饭成员（口味联动）----
-        if conn.execute("SELECT COUNT(*) c FROM diners").fetchone()["c"] == 0:
-            conn.executemany(
-                "INSERT INTO diners(name,tags) VALUES(?,?)",
-                [("小明", jdump(["辣", "不吃香菜"])), ("小红", jdump(["微辣", "清淡"]))],
-            )
-            print("已写入干饭成员 x2")
-
         # ---- 餐厅收藏 ----
         if conn.execute("SELECT COUNT(*) c FROM shops").fetchone()["c"] == 0:
             shops = [

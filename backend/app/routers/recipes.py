@@ -13,6 +13,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 from sqlite3 import Connection
 
+from app.vip import check_quota
+
 from app.db import get_db, jdump, jload, row_to_dict
 from app.routers.auth import get_optional_user, get_write_user
 from app.routers.candidates import _subtract_subs
@@ -124,6 +126,8 @@ def create_recipe(body: RecipeIn,
     """新建菜谱（默认我的菜谱；写 source=admin 即录入参考菜谱）。"""
     if body.source == "my" and _check_name_unique(conn, body.name, user):
         raise HTTPException(409, "我的菜谱已存在同名，请换个菜名")
+    if body.source == "my":
+        check_quota(conn, user, "recipes")  # 会员额度：仅限「我的菜谱」，管理员录参考菜谱不受限
     cur = conn.execute(
         "INSERT INTO recipes(user_id,source,name,em,cover,time,diff,tags,ing,steps,star) "
         "VALUES(?,?,?,?,?,?,?,?,?,?,?)",

@@ -1,6 +1,6 @@
 // api/index.js —— 业务 API 客户端：按后端路由模块聚合，对接全 API 面
 // 后端路由清单（FastAPI）：
-//   /recipes  /shops  /candidates  /fridge  /diners  /tips  /records  /weights  /configs
+//   /recipes  /shops  /candidates  /fridge  /tips  /records  /weights  /configs
 // 派生数据（临期状态/计时elapsed/统计）由后端实时现算，前端只消费结果，不落库。
 // 多用户隔离：身份完全由请求头 Authorization Bearer token 决定（后端 get_optional_user 解析）；
 //   下面 URL 上的 ?user=N 是历史遗留，后端已不再读取，保留只为不改动各页调用点。
@@ -74,22 +74,24 @@ export const catApi = {
 
 // 封面图库：管理员维护的固定封面（emoji+渐变），菜谱编辑时点选，渲染用之
 
+// 吃这些候选：space=mine 个人池 / family 家庭共享池（列表、加候选都带空间；
+// 计时与移除按候选 id 操作，家庭池内成员都可操作，归属由后端判定）
 export const candidateApi = {
-  list: () => req.get('/candidates'),
-  add: (kind, refId, user = getCurUser()) =>
-    req.post(`/candidates?user=${user}`, { kind, ref_id: refId }),
+  list: (space = 'mine') => req.get(`/candidates?space=${space}`),
+  add: (kind, refId, user = getCurUser(), space = 'mine') =>
+    req.post(`/candidates?user=${user}`, { kind, ref_id: refId, space }),
   remove: (id, user = getCurUser()) => req.del(`/candidates/${id}?user=${user}`),
   timerStart: (id) => req.post(`/candidates/${id}/timer/start`),
   timerPause: (id) => req.post(`/candidates/${id}/timer/pause`),
   timerCancel: (id) => req.post(`/candidates/${id}/timer/cancel`)
 }
 
-export const dinerApi = {
-  list: () => req.get('/diners'),
-  create: (data) => req.post('/diners', data),
-  update: (id, data) => req.put(`/diners/${id}`, data),
-  updateTags: (id, tags) => req.put(`/diners/${id}/tags`, { tags }),
-  del: (id) => req.del(`/diners/${id}`)
+// 家庭空间：创建/凭 6 位 ID 加入/我的家庭/退出（创建者退出=解散）
+export const familyApi = {
+  mine: () => req.get('/families/mine'),
+  create: (name) => req.post('/families', { name }),
+  join: (code) => req.post('/families/join', { code }),
+  leave: () => req.post('/families/leave')
 }
 
 export const tasteApi = {
@@ -136,6 +138,14 @@ export const configApi = {
   set: (key, value) => req.put(`/configs/${key}`, { value })
 }
 
+// 会员/支付：套餐与会员态（/payments/plans）、mock 或虚拟支付下单、订单列表
+export const paymentApi = {
+  plans: () => req.get('/payments/plans'),
+  order: (planId, env = 0) => req.post('/payments/order', { plan_id: planId, env }),
+  orderStatus: (no) => req.get(`/payments/order/${no}/status`),
+  orders: () => req.get('/payments/orders')
+}
+
 // 管理端：密码登录 + 公共资源统计 + 用户管理（仅公共信息，个人数据在上管理端）
 export const adminApi = {
   login: (code) => req.post('/admin/login', { code }),
@@ -143,7 +153,11 @@ export const adminApi = {
   users: () => req.get('/admin/users'),
   createUser: (data) => req.post('/admin/users', data),
   updateUser: (id, data) => req.put(`/admin/users/${id}`, data),
-  delUser: (id) => req.del(`/admin/users/${id}`)
+  delUser: (id) => req.del(`/admin/users/${id}`),
+  // 会员管理：总览（KPI+会员+订单）、手工赠送/取消
+  vip: () => req.get('/admin/vip'),
+  grantVip: (user_id, days) => req.post('/admin/vip/grant', { user_id, days }),
+  revokeVip: (user_id) => req.post('/admin/vip/revoke', { user_id })
 }
 
 // 用户端「我的数据」总览：个人数据聚合（仅用户端使用，管理端不做个人数据）

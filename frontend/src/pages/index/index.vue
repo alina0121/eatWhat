@@ -1,7 +1,7 @@
 <!-- index.vue —— 推荐页（对齐「第一版 UI」今日页）
   结构：问候 + 转盘「帮我选一个」(菜谱+餐厅混合池，抽中类型徽章/标题/副描述，
-        结果操作：＋候选 与 🔄再抽一次 并排) + 「跟谁一起吃」干饭成员行(选人自动带口味)
-        + 「快捷筛一下」口味 chips + 「为您推荐」[换一个]（1 餐厅 + 3 菜谱，按口味过滤）
+        结果操作：＋候选(开关式，✓已选 再点移出) 与 🔄再抽一次 并排) + 「快捷筛一下」口味 chips
+        + 「为您推荐」[换一个]（1 餐厅 + 3 菜谱，按口味过滤）
 -->
 <template>
   <view class="tab-page">
@@ -32,23 +32,6 @@
           </text>
           <text class="pbtn ghost" @tap="spin">🔄 再抽一次</text>
         </view>
-      </view>
-
-      <!-- ========== 跟谁一起吃（干饭成员，选上自动带口味） ========== -->
-      <view class="section">
-        <view class="sec-tit">跟谁一起吃？ <text class="sub-13">选上就带上他/她的口味</text></view>
-        <scroll-view scroll-x class="chip-scroll">
-          <view class="chip-row1">
-            <view class="chip" :class="{ on: inDiners.length === 0 }" @tap="clearDiners">🌤 不限 / 清空</view>
-            <view
-              class="chip"
-              v-for="d in diners"
-              :key="d.id"
-              :class="{ on: inDiners.includes(d.id) }"
-              @tap="toggleDiner(d)"
-            >🧑 {{ d.name }}</view>
-          </view>
-        </scroll-view>
       </view>
 
       <!-- ========== 快捷筛一下（口味 chips） ========== -->
@@ -105,20 +88,18 @@
 </template>
 
 <script>
-import { recipeApi, shopApi, dinerApi, candidateApi, tasteApi } from '@/api'
+import { recipeApi, shopApi, candidateApi, tasteApi } from '@/api'
 
 export default {
   data() {
     return {
       recipes: [],
       shops: [],
-      diners: [],          // 干饭成员（含各自口味 tags）
       cands: [],           // 已在「吃这些」的候选（用于 ✓已选 状态）
       result: null,        // 转盘抽中的项 { kind, ref_id, name, em, sub }
       spinning: false,     // 转盘动画标记
       quickTags: [],        // 从 tasteApi 动态读；空时显示默认
-      selTags: [],         // 当前生效的口味标记（手动点选 + 成员带入，取并集）
-      inDiners: [],        // 已选干饭成员 id
+      selTags: [],         // 当前生效的口味标记（手动点选）
       recShop: null,
       recRecipes: [],
       recOff: 0            // 「换一个」轮换偏移
@@ -136,12 +117,11 @@ export default {
   methods: {
     async load() {
       try {
-        const [recipes, shops, diners, cands, tags] = await Promise.all([
-          recipeApi.list(), shopApi.list(), dinerApi.list(), candidateApi.list(), tasteApi.list().catch(() => [])
+        const [recipes, shops, cands, tags] = await Promise.all([
+          recipeApi.list(), shopApi.list(), candidateApi.list(), tasteApi.list().catch(() => [])
         ])
         this.recipes = recipes
         this.shops = shops
-        this.diners = diners
         this.cands = cands
         // 口味标签：用户自己维护的，空则用默认
         const names = (tags || []).map((t) => t.name).filter(Boolean)
@@ -149,27 +129,7 @@ export default {
         this.recommend()
       } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
     },
-    // —— 干饭成员联动：选人时把他的口味标记取并集带入「快捷筛一下」——
-    toggleDiner(d) {
-      const i = this.inDiners.indexOf(d.id)
-      if (i >= 0) this.inDiners.splice(i, 1)
-      else this.inDiners.push(d.id)
-      // 按已选成员的 tags 取并集，覆盖当前 selTags（与第一版一致，之后仍可手动点口味）
-      const tags = []
-      this.inDiners.forEach((id) => {
-        const dd = this.diners.find((x) => x.id === id)
-        ;(dd && dd.tags || []).forEach((t) => { if (!tags.includes(t)) tags.push(t) })
-      })
-      this.selTags = tags
-      this.recommend()
-    },
-    // 「不限/清空」：清空成员与全部口味标记
-    clearDiners() {
-      this.inDiners = []
-      this.selTags = []
-      this.recommend()
-    },
-    // —— 快捷筛一下：手动点选口味标记（不影响已选成员）——
+    // —— 快捷筛一下：手动点选口味标记 ——
     toggleTag(t) {
       const i = this.selTags.indexOf(t)
       if (i >= 0) this.selTags.splice(i, 1)
@@ -190,14 +150,23 @@ export default {
         this.result = pool[Math.floor(Math.random() * pool.length)]
       }, 420)
     },
+    // —— 加候选开关：＋候选 加入 / ✓已选 再点移出（移出按量回退待采购，同「+家庭空间」交互）——
+    async toggleCand(kind, refId) {
+      try {
+        const exist = this.cands.find((c) => c.kind === kind && c.ref_id === refId)
+        if (exist) {
+          await candidateApi.remove(exist.id)
+          uni.showToast({ title: '已移出「吃这些」', icon: 'none' })
+        } else {
+          await candidateApi.add(kind, refId)
+          uni.showToast({ title: '已加入「吃这些」', icon: 'success' })
+        }
+        this.cands = await candidateApi.list().catch(() => this.cands)
+      } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
+    },
     async addResult() {
       if (!this.result) return
-      if (this.pickInEat) return
-      try {
-        await candidateApi.add(this.result.kind, this.result.ref_id)
-        this.cands = await candidateApi.list().catch(() => this.cands)
-        uni.showToast({ title: '已加入「吃这些」', icon: 'success' })
-      } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
+      await this.toggleCand(this.result.kind, this.result.ref_id)
     },
     // —— 为您推荐：按当前口味标记过滤，1 餐厅 + 3 菜谱，可「换一个」轮换——
     recommend() {
@@ -216,12 +185,8 @@ export default {
       return this.cands.some((c) => c.kind === kind && c.ref_id === refId)
     },
     cover() { return { background: 'linear-gradient(135deg,#4b3fe3,#8b5cf6,#ec4899)' } },
-    addRecipeCand(r) {
-      candidateApi.add('recipe', r.id).then(async () => { this.cands = await candidateApi.list().catch(() => this.cands); uni.showToast({ title: '已加入吃这些', icon: 'success' }) }).catch((e) => uni.showToast({ title: e.message, icon: 'none' }))
-    },
-    addShopCand(s) {
-      candidateApi.add('shop', s.id).then(async () => { this.cands = await candidateApi.list().catch(() => this.cands); uni.showToast({ title: '已加入吃这些', icon: 'success' }) }).catch((e) => uni.showToast({ title: e.message, icon: 'none' }))
-    },
+    addRecipeCand(r) { this.toggleCand('recipe', r.id) },
+    addShopCand(s) { this.toggleCand('shop', s.id) },
     toRecipe(r) { uni.navigateTo({ url: `/pages/recipe-detail/recipe-detail?id=${r.id}` }) },
     toShop(s) { uni.navigateTo({ url: `/pages/shop-detail/shop-detail?id=${s.id}` }) }
   }
@@ -266,8 +231,6 @@ export default {
    块级 flex/grid 会被撑到容器宽度，小程序 scroll-view scroll-x 检查不到更宽的内容宽度，
    只有行内级盒才会收缩到内容实际宽度、触发横向滚动 */
 .chip-scroll { white-space: nowrap; }
-.chip-row1 { display: inline-flex; vertical-align: top; gap: 12rpx; padding-right: 8rpx; }
-.chip-row1 .chip { white-space: nowrap; flex-shrink: 0; }
 .chiprow { display: inline-grid; vertical-align: top; grid-template-rows: repeat(2, 56rpx); grid-auto-flow: column; grid-auto-columns: max-content; gap: 12rpx 10rpx; padding-right: 8rpx; }
 .chiprow .chip { white-space: nowrap; flex-shrink: 0; }
 

@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlite3 import Connection
 
+from app.vip import check_quota
+
 from app.db import get_db, jdump, jload, row_to_dict
 from app.routers.auth import get_optional_user, get_write_user
 
@@ -59,6 +61,7 @@ def list_shops(user: int = Depends(get_optional_user),
 def create_shop(body: ShopIn,
                 user: int = Depends(get_write_user),
                 conn: Connection = Depends(get_db)):
+    check_quota(conn, user, "shops")  # 会员额度：餐厅收藏条数
     cur = conn.execute(
         "INSERT INTO shops(user_id,name,type,price,star,must,note,arr_min,transport,tags,icon) "
         "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
