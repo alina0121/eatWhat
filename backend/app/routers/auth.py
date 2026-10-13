@@ -228,12 +228,14 @@ def login(body: LoginBody, conn=Depends(get_conn)):
     is_new = False
     if row:
         uid = row["id"]
-        # 更新 nickname/avatar（前端新版 chooseAvatar + nickname input 会传）
-        nickname = body.nickname or row["nickname"] or f"吃货{uid}"
+        # nickname 库值优先：老用户在应用内改过名后，重新登录不得被前端传的
+        # 昵称（本地缓存旧值/邮箱前缀等）覆盖回去；仅库中昵称为空时才采纳
+        # 前端传值（微信授权昵称首次落库）。avatar 保持前端优先（微信临时头像链接每次授权刷新）
+        nickname = row["nickname"] or body.nickname or f"吃货{uid}"
         avatar = body.avatar or row["avatar"] or ""
         conn.execute(
-            "UPDATE users SET nickname=?, avatar=?, unionid=?, last_seen=? WHERE id=?",
-            (nickname, avatar, unionid, now, uid),
+            "UPDATE users SET nickname=?, name=?, avatar=?, unionid=?, last_seen=? WHERE id=?",
+            (nickname, nickname, avatar, unionid, now, uid),
         )
     else:
         nickname = body.nickname or f"吃货{conn.execute('SELECT COUNT(*) FROM users').fetchone()[0] + 1}"
@@ -453,9 +455,12 @@ def login_email(body: EmailLoginBody, conn=Depends(get_conn)):
     is_new = False
     if row:
         uid = row["id"]
-        nickname = body.nickname or row["nickname"] or f"吃货{uid}"
+        # nickname 库值优先：已有昵称的账户重新登录不覆盖应用内改名；
+        # body.nickname（前端每次登录都传邮箱前缀）仅作昵称为空的老数据兜底
+        nickname = row["nickname"] or body.nickname or f"吃货{uid}"
         conn.execute(
-            "UPDATE users SET nickname=?, last_seen=? WHERE id=?", (nickname, now, uid)
+            "UPDATE users SET nickname=?, name=?, last_seen=? WHERE id=?",
+            (nickname, nickname, now, uid),
         )
     else:
         # 新用户：openid 用 "email_" + 哈希，和微信用户区分开

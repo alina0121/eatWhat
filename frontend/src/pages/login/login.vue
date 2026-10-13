@@ -133,7 +133,7 @@ export default {
       }
       this.loading = true
       try {
-        // 昵称默认取邮箱 @ 前缀
+        // 昵称取邮箱 @ 前缀（仅新注册时后端用作初始昵称；已有昵称不会被覆盖）
         const r = await authApi.loginEmail(email, this.code, email.split('@')[0])
         // 落 token + 用户信息，后续请求自动带 Authorization
         this.applyLogin(r)
