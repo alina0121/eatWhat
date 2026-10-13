@@ -11,6 +11,7 @@ from sqlite3 import Connection
 
 from app.db import get_db, row_to_dict
 from app.routers.auth import get_optional_user, get_write_user
+from app.vip import view_cutoff
 
 router = APIRouter(prefix="/records", tags=["records"])
 
@@ -38,6 +39,7 @@ def list_records(
     conn: Connection = Depends(get_db),
 ):
     """按日期范围或单日查询当前用户的饮食记录。未登录（user=0）为空。"""
+    cutoff = view_cutoff(conn, user, "records")  # 非会员回看限制（None=不限）
     if date:
         rows = conn.execute(
             "SELECT * FROM records WHERE user_id=? AND date=? ORDER BY id", (user, date)
@@ -51,6 +53,8 @@ def list_records(
         rows = conn.execute(
             "SELECT * FROM records WHERE user_id=? ORDER BY date DESC, id", (user,)
         ).fetchall()
+    if cutoff:
+        rows = [r for r in rows if r["date"] >= cutoff]
     return [row_to_dict(r) for r in rows]
 
 
@@ -61,8 +65,11 @@ def calendar(user: int = Depends(get_optional_user),
     rows = conn.execute(
         "SELECT * FROM records WHERE user_id=? ORDER BY date, id", (user,)
     ).fetchall()
+    cutoff = view_cutoff(conn, user, "records")  # 非会员回看限制（None=不限）
     agg = {}
     for r in rows:
+        if cutoff and r["date"] < cutoff:
+            continue
         agg.setdefault(r["date"], []).append(row_to_dict(r))
     return agg
 

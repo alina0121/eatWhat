@@ -73,7 +73,7 @@ def delete(tid: int, user: int = Depends(get_write_user), db: Connection = Depen
     if not row or row["user_id"] != user:
         raise HTTPException(404, "标签不存在")
     name = row["name"]
-    # 校验：只查当前用户自己的菜谱/成员是否在用这个标签（别人的用法与我无关）
+    # 校验：只查当前用户自己的菜谱是否在用这个标签（别人的用法与我无关）
     used_by = []
     for r in db.execute(
         "SELECT name, tags FROM recipes WHERE user_id=?", (user,)
@@ -81,13 +81,6 @@ def delete(tid: int, user: int = Depends(get_write_user), db: Connection = Depen
         try:
             tags = json.loads(r["tags"] or "[]")
             if name in tags: used_by.append(f"菜谱「{r['name']}」")
-        except Exception: pass
-    for d in db.execute(
-        "SELECT name, tags FROM diners WHERE user_id=?", (user,)
-    ).fetchall():
-        try:
-            tags = json.loads(d["tags"] or "[]")
-            if name in tags: used_by.append(f"成员「{d['name']}」")
         except Exception: pass
     if used_by:
         raise HTTPException(409, f"「{name}」正在被 {used_by[0]} 使用，不能删除")

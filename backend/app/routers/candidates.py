@@ -7,6 +7,9 @@
 2. 移除候选：把代入的待采购量**按量回退**（扣除，非清零），保证加几次扣几次、不多不少。
 3. 餐厅候选：只进候选，不参与采购计算（代入/回退 dose nothing）。
 4. COOK 一致性：加入 → 代入，移除 → 回退，全在**同一个数据库事务**内完成，要么全成要么全不成。
+5. 空间：space=mine 个人池（默认）/ space=family 家庭共享池（families.py 建家庭、成员凭邀请码加入）。
+   家庭池内成员人人可见、可加/删/启停计时；缺货代入与回退始终记在**加者**的 fridge/purchase 上。
+   老数据 creator_id=0，回退用 user_id（历史候选本来 user_id 就是加它的人）。
 
 实现细节：
 - 候选记录美食材代入的映射 subs={name+unit: 数量}，移除时据此精确回退待采购。
@@ -28,6 +31,16 @@ router = APIRouter(prefix="/candidates", tags=["candidates"])
 class CandidateIn(BaseModel):
     kind: str          # recipe | shop
     ref_id: int        # 关联菜谱/餐厅 id
+    space: str = "mine"  # mine 个人池 | family 家庭空间共享池
+
+
+def _member_family_id(conn: Connection, uid: int):
+    """该用户所在家庭 id；未加入家庭返回 None。"""
+    row = conn.execute(
+        "SELECT f.id FROM families f JOIN family_members m ON m.family_id=f.id WHERE m.user_id=?",
+        (uid,),
+    ).fetchone()
+    return row["id"] if row else None
 
 
 def _ingest_subs(conn: Connection, ref_id: int, user_id: int) -> str:
@@ -106,20 +119,46 @@ def _enrich_track(cand: dict, conn: Connection) -> dict:
 
 
 def _get_owned_inbox(conn: Connection, cid: int, user: int) -> dict:
-    """取候选并校验归属：只能操作自己的候选，避免改到别人的「吃这些」。"""
+    """取候选并校验操作权：个人池只能操作自己的；家庭池内任何成员都可操作。"""
     row = conn.execute("SELECT * FROM eat_inbox WHERE id=?", (cid,)).fetchone()
-    if not row or row["user_id"] != user:
+    if not row:
+        raise HTTPException(404, "候选不存在")
+    if row["family_id"]:
+        if row["family_id"] != (_member_family_id(conn, user) or -1):
+            raise HTTPException(404, "候选不存在")
+    elif row["user_id"] != user:
         raise HTTPException(404, "候选不存在")
     return row_to_dict(row)
 
 
+def _creator_uid(row: dict) -> int:
+    """该候选的加者（记账对象）：缺货代入/回退都落在加者的待采购上。
+
+    老数据 creator_id=0，回退用 user_id（两者语义一致：候选属于加它的人）。
+    """
+    return row.get("creator_id") or row.get("user_id") or 0
+
+
 @router.get("")
-def list_candidates(user: int = Depends(get_optional_user),
+def list_candidates(space: str = "mine",
+                    user: int = Depends(get_optional_user),
                     conn: Connection = Depends(get_db)):
-    """返回当前用户的「吃这些」候选，附带实时计时状态。未登录（user=0）为空。"""
-    rows = conn.execute(
-        "SELECT * FROM eat_inbox WHERE user_id=? ORDER BY id", (user,)
-    ).fetchall()
+    """返回候选列表，附带实时计时状态。未登录（user=0）为空。
+
+    - space=mine（默认）：个人池（family_id=0 且是自己的候选）。
+    - space=family：所在家庭空间的共享池（成员可见、可加/删/启停计时）。
+    """
+    if space == "family":
+        fid = _member_family_id(conn, user)
+        if not fid:
+            return []
+        rows = conn.execute(
+            "SELECT * FROM eat_inbox WHERE family_id=? ORDER BY id", (fid,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM eat_inbox WHERE user_id=? AND family_id=0 ORDER BY id", (user,)
+        ).fetchall()
     out = []
     for r in rows:
         d = row_to_dict(r)
@@ -138,11 +177,18 @@ def add_candidate(body: CandidateIn,
                   conn: Connection = Depends(get_db)):
     """加入候选。整个方法在一个事务里（get_db 提交/回滚）：
 
-    - kind=recipe：取菜谱名/表情，计算**该用户**的缺货代入待采购并记录 subs。
+    - kind=recipe：取菜谱名/表情，计算**加者**的缺货代入待采购并记录 subs。
+      家庭空间加菜时，缺货照样代入**加者自己**的待采购（回退也回他的）。
     - kind=shop ：仅入候选，不参与采购。
+    - space=family：进家庭共享池，全体成员可见可操作；查重按空间维度。
     """
     kind = body.kind
     ref_id = body.ref_id
+    fid = 0
+    if body.space == "family":
+        fid = _member_family_id(conn, user) or 0
+        if not fid:
+            raise HTTPException(400, "还没加入家庭空间，先到「我的-家庭」创建或加入")
     subs = "{}"
     if kind == "recipe":
         rec = conn.execute("SELECT name, em FROM recipes WHERE id=?", (ref_id,)).fetchone()
@@ -159,17 +205,24 @@ def add_candidate(body: CandidateIn,
     else:
         raise HTTPException(400, "kind 须为 recipe 或 shop")
 
-    # 同一用户同一道菜/店只能有一条候选
-    dup = conn.execute(
-        "SELECT id FROM eat_inbox WHERE kind=? AND ref_id=? AND user_id=?",
-        (kind, ref_id, user),
-    ).fetchone()
+    # 查重按空间维度：家庭池同空间内不能重复；个人池只查自己的
+    if fid:
+        dup = conn.execute(
+            "SELECT id FROM eat_inbox WHERE kind=? AND ref_id=? AND family_id=?",
+            (kind, ref_id, fid),
+        ).fetchone()
+    else:
+        dup = conn.execute(
+            "SELECT id FROM eat_inbox WHERE kind=? AND ref_id=? AND user_id=? AND family_id=0",
+            (kind, ref_id, user),
+        ).fetchone()
     if dup:
         raise HTTPException(400, "该候选已在「吃这些」里")
 
     cur = conn.execute(
-        "INSERT INTO eat_inbox(user_id,kind,ref_id,name,em,subs) VALUES(?,?,?,?,?,?)",
-        (user, kind, ref_id, name, em, subs),
+        "INSERT INTO eat_inbox(user_id,kind,ref_id,name,em,subs,family_id,creator_id) "
+        "VALUES(?,?,?,?,?,?,?,?)",
+        (user, kind, ref_id, name, em, subs, fid, user),
     )
     return {"id": cur.lastrowid, "ok": True}
 
@@ -178,11 +231,14 @@ def add_candidate(body: CandidateIn,
 def remove_candidate(cid: int,
                      user: int = Depends(get_write_user),
                      conn: Connection = Depends(get_db)):
-    """移除候选：回退**该用户**代入的待采购量（餐厅无代入则无影响），同事务保证一致。"""
-    _get_owned_inbox(conn, cid, user)
-    row = conn.execute("SELECT * FROM eat_inbox WHERE id=?", (cid,)).fetchone()
-    subs = jload(row["subs"], default={})
-    _subtract_subs(conn, subs, user)
+    """移除候选：按量回退**加者**代入的待采购（餐厅无代入则无影响），同事务保证一致。
+
+    家庭池里 B 删 A 加的候选 → 回退 A 的待采购（谁加的记谁的账）。
+    """
+    row = _get_owned_inbox(conn, cid, user)
+    # _get_owned_inbox 走 row_to_dict，subs 已是 dict（JSON 自动反序列化）；兜底容错一次
+    subs = row["subs"] if isinstance(row["subs"], dict) else jload(row["subs"], default={})
+    _subtract_subs(conn, subs, _creator_uid(row))
     conn.execute("DELETE FROM tracks WHERE inbox_id=?", (cid,))
     conn.execute("DELETE FROM eat_inbox WHERE id=?", (cid,))
     return {"id": cid, "ok": True}

@@ -1,5 +1,5 @@
 <!-- account-settings.vue —— 账户设置
-  归拢账户相关功能：邮箱绑定（绑定/解绑）· 退出登录 · 注销账户（双确认）
+  归拢账户相关功能：资料修改（头像/昵称/个性签名）· 邮箱绑定（绑定/解绑）· 退出登录 · 注销账户（双确认）
   入口：「我的」页功能菜单 → 账户设置；登录页 redirect=bind 回来也会自动落到这里弹绑定弹窗
 -->
 <template>
@@ -32,6 +32,11 @@
             <view class="acc-row" @tap="openNick">
               <text class="acc-lab">昵称</text>
               <text class="acc-val">{{ curName }}</text>
+              <text class="edit-link">✎</text>
+            </view>
+            <view class="acc-row" @tap="openSig">
+              <text class="acc-lab">签名</text>
+              <text class="acc-val sig">{{ signature || '好好吃饭好好生活' }}</text>
               <text class="edit-link">✎</text>
             </view>
             <view class="acc-row">
@@ -107,6 +112,19 @@
       </view>
     </view>
 
+    <!-- 签名编辑弹窗 -->
+    <view class="mask" v-if="sigForm.show" @tap="sigForm.show = false">
+      <view class="dialog" @tap.stop>
+        <text class="d-title">修改签名</text>
+        <input v-model="sigForm.val" placeholder="好好吃饭好好生活" class="dfi" :focus="sigForm.show" maxlength="30" />
+        <text class="d-sub">留空保存则恢复默认「好好吃饭好好生活」</text>
+        <view class="d-btns">
+          <button class="pbtn ghost" @tap="sigForm.show = false">取消</button>
+          <button class="pbtn" @tap="saveSignature">保存</button>
+        </view>
+      </view>
+    </view>
+
     <!-- 头像 emoji 候选弹窗（4列 × 两行半网格，候选来自食材图标池 ingredient_icon_pool） -->
     <view class="mask" v-if="avatarForm.show" @tap="avatarForm.show = false">
       <view class="dialog" @tap.stop>
@@ -153,11 +171,12 @@ import request from '@/utils/request'
 export default {
   data() {
     return {
-      isLogin: false, curName: '', userEmail: '', userRole: '', avatar: '',
+      isLogin: false, curName: '', userEmail: '', userRole: '', avatar: '', signature: '',
       // 头像 emoji 候选池（来自 configs.ingredient_icon_pool，与食材图标同池）
       iconPool: [],
-      // 昵称编辑 / 头像选择 / 邮箱绑定 / 注销 弹窗
+      // 昵称编辑 / 签名编辑 / 头像选择 / 邮箱绑定 / 注销 弹窗
       nickForm: { show: false, val: '' },
+      sigForm: { show: false, val: '' },
       avatarForm: { show: false },
       emailCd: 0, emailDialog: { show: false, email: '', code: '' },
       deleteDialog: { show: false, step: 1, val: '' },
@@ -183,6 +202,7 @@ export default {
         this.userEmail = me.email || ''
         this.userRole = me.role || ''
         this.avatar = me.avatar || ''
+        this.signature = me.signature || ''
         this.curName = me.nickname || uni.getStorageSync('eat_user') || ''
       } catch (e) {
         // token 失效（request.js 已清 token）→ 回到未登录态
@@ -219,6 +239,19 @@ export default {
         this.avatar = em
         this.avatarForm.show = false
         uni.showToast({ title: '头像已更新', icon: 'success' })
+      } catch (e) {
+        uni.showToast({ title: e.message || '保存失败', icon: 'none' })
+      }
+    },
+    // 签名修改：PUT /auth/profile（后端截断 30 字）；空值=清空，显示回落默认
+    openSig() { this.sigForm = { show: true, val: this.signature } },
+    async saveSignature() {
+      try {
+        const v = (this.sigForm.val || '').trim()
+        await authApi.updateProfile({ signature: v })
+        this.signature = v
+        this.sigForm.show = false
+        uni.showToast({ title: '已保存', icon: 'success' })
       } catch (e) {
         uni.showToast({ title: e.message || '保存失败', icon: 'none' })
       }
@@ -339,6 +372,7 @@ export default {
 .acc-row + .acc-row { border-top: 1rpx solid var(--border); }
 .acc-lab { font-size: 26rpx; color: var(--text-2); width: 88rpx; flex: none; }
 .acc-val { font-size: 28rpx; font-weight: 600; flex: 1; min-width: 0; word-break: break-all; }
+.acc-val.sig { font-weight: 400; font-size: 24rpx; color: var(--text-2); }
 .edit-link { font-size: 28rpx; color: var(--brand); flex: none; }
 /* 头像小圆底（emoji 直接展示在渐变圆里，与「我的」页资料头同款） */
 .ava-dot { display: inline-flex; width: 72rpx; height: 72rpx; border-radius: 50%; background: linear-gradient(135deg,#4b3fe3,#8b5cf6); align-items: center; justify-content: center; font-size: 36rpx; font-weight: 400; }

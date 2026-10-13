@@ -1,6 +1,6 @@
 <!-- mine.vue —— 我的页（对齐「第一版 UI」p-me）
   结构：资料头（头像+昵称+副标题，点击弹账号弹窗）→ 统计条(本周做了多少顿 / 我的菜谱 / 收藏餐厅)
-        → 干饭成员(各自口味偏好维护) → 功能菜单行(图标 + 标题 + 副标题 + ›)
+        → 功能菜单行(家庭空间 + 图标 + 标题 + 副标题 + ›)
   注：邮箱绑定 / 退出登录 / 注销账户已归拢到 account-settings 账户设置页
 -->
 <template>
@@ -21,7 +21,7 @@
               <!-- 仅当后端返回 role=admin 才显示；eat_admin 只是管理台口令会话标记，不代表账号身份 -->
               <text class="u-role" v-if="userRole === 'admin'">管理员</text>
             </view>
-            <text class="pmail">一人食 · 主打快手菜</text>
+            <text class="pmail">{{ userSignature || '好好吃饭好好生活' }}</text>
           </view>
           <text class="newlink">{{ isLogin ? '账号' : '去登录' }}</text>
         </view>
@@ -42,36 +42,23 @@
         </view>
       </view>
 
-      <!-- 干饭成员 -->
-      <view class="section">
-        <view class="sec-head">
-          <text class="sec-title">干饭成员</text>
-          <text class="newlink" @tap="addDiner">＋ 成员</text>
-        </view>
-        <view class="card row" v-for="d in diners" :key="d.id">
-          <view class="row-top">
-            <text class="name">{{ d.name }}</text>
-            <text class="sp"></text>
-            <text class="op" @tap="editDiner(d)">口味</text>
-            <text class="op danger" @tap="delDiner(d)">✕</text>
-          </view>
-          <view class="row-bottom" v-if="d.tags && d.tags.length">
-            <text class="t-pill" v-for="t in d.tags" :key="t">{{ t }}</text>
-          </view>
-        </view>
-      </view>
-
       <!-- 功能菜单 -->
       <view class="section">
         <view class="menu">
+          <view class="mrow" @tap="nav('/pages/family/family')">
+            <text class="ic">🏠</text><view class="m1"><text class="mt">家庭空间</text><text class="ms">{{ famRowSub }}</text></view><text class="ar">›</text>
+          </view>
           <view class="mrow" @tap="nav('/pages/mine-tastes/mine-tastes')">
-            <text class="ic">🏷️</text><view class="m1"><text class="mt">口味标签</text><text class="ms">菜谱筛选 · 成员偏好 · 推荐</text></view><text class="ar">›</text>
+            <text class="ic">🏷️</text><view class="m1"><text class="mt">口味标签</text><text class="ms">菜谱筛选 · 推荐</text></view><text class="ar">›</text>
           </view>
           <view class="mrow" @tap="nav('/pages/mine-ingredients/mine-ingredients')">
             <text class="ic">🧺</text><view class="m1"><text class="mt">食材库</text><text class="ms">菜谱可选食材 · 独立维护</text></view><text class="ar">›</text>
           </view>
           <view class="mrow" @tap="nav('/pages/mine-ref/mine-ref')">
             <text class="ic">📚</text><view class="m1"><text class="mt">参考菜谱</text><text class="ms">管理员精选 · 可加入吃这些或我的菜谱</text></view><text class="ar">›</text>
+          </view>
+          <view class="mrow" @tap="nav('/pages/vip/vip')">
+            <text class="ic">{{ vip && vip.is_member ? '👑' : '⭐' }}</text><view class="m1"><text class="mt">会员中心</text><text class="ms">{{ vipRowSub }}</text></view><text class="ar">›</text>
           </view>
           <view class="mrow" @tap="nav('/pages/mine-tips/mine-tips')">
             <text class="ic">👨‍🍳</text><view class="m1"><text class="mt">厨房技巧</text><text class="ms">大家的技巧 · 新增/修改需审核</text></view><text class="ar">›</text>
@@ -102,29 +89,6 @@
 
     <custom-tab current="mine" />
 
-    <!-- 居中弹窗（自绘遮罩，兼容 H5/App/小程序）
-     注释：uni.showModal 的 editable 在 H5 不支持且无法自定义样式，故用自定义弹窗承载输入。 -->
-    <view class="mask" v-if="form.show" @tap="form.show = false">
-      <view class="dialog" @tap.stop>
-        <text class="d-title">{{ form.title }}</text>
-        <!-- tags 模式：chip 点选 -->
-        <template v-if="form.mode === 'tags'">
-          <view class="tag-grid">
-            <view v-for="t in allTags" :key="t" class="t-chip" :class="{ on: tagSel.includes(t) }" @tap="toggleTag(t)">{{ t }}</view>
-          </view>
-          <text class="d-sub">已选 {{ tagSel.length }} 项</text>
-        </template>
-        <!-- 其他模式：input -->
-        <template v-else>
-          <input v-model="form.val" :placeholder="form.hint" class="dfi" :focus="form.show" />
-        </template>
-        <view class="d-btns">
-          <button class="pbtn ghost" @tap="form.show = false">取消</button>
-          <button class="pbtn" @tap="saveForm">{{ form.mode === 'tags' ? '保存口味' : '确定' }}</button>
-        </view>
-      </view>
-    </view>
-
     <!-- 账号弹窗：仅未登录时弹出（已登录点资料头直接进「账户设置」页） -->
     <view class="mask" v-if="accountDialog.show" @tap="accountDialog.show = false">
       <view class="dialog" @tap.stop>
@@ -140,23 +104,41 @@
 </template>
 
 <script>
-import { dinerApi, recordApi, recipeApi, shopApi, tasteApi, authApi } from '@/api'
+import { recordApi, recipeApi, shopApi, authApi, paymentApi, familyApi } from '@/api'
 import request from '@/utils/request'
 
 export default {
   data() {
-    return { diners: [], curName: '', userRole: '', weekCount: 0, myRecipes: 0, shopCount: 0,
-             allTags: [], tagSel: [],   // 口味标签池（来自 tasteApi）+ 当前选中
-             form: { show: false, mode: '', title: '', val: '', hint: '', id: null },
+    return { family: null, curName: '', userSignature: '', userRole: '', weekCount: 0, myRecipes: 0, shopCount: 0,
              // 登录态 / 账号弹窗（已登录点资料头直接进 account-settings 页；未登录弹引导）
              isLogin: false,
              userEmail: '', userAvatar: '',
-             accountDialog: { show: false }, }
+             accountDialog: { show: false },
+             // 会员态（/payments/plans 是公开接口，游客也能看开关态）
+             vip: null, }
+  },
+  computed: {
+    // 家庭空间菜单行副标题：已加入显示名称+成员数，未加入引导
+    famRowSub() {
+      if (!this.family) return '创建或加入，共享「吃这些」候选'
+      const n = (this.family.members || []).length
+      return `${this.family.name}${n ? ` · ${n}位成员` : ''}`
+    },
+    vipRowSub() {
+      if (!this.vip) return '免费额度 · 开通无限量'
+      if (!this.vip.enabled) return '全部功能免费使用中'
+      if (this.vip.is_member) {
+        const d = new Date(this.vip.member_until * 1000)
+        return `会员生效中 · 至 ${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+      }
+      return '免费额度 · 开通无限量'
+    },
   },
   async onShow() {
     // 昵称占位：未登录时显示「未登录」，避免与任何真实账号混淆
     this.curName = uni.getStorageSync('eat_user') || '未登录'
     this.load()
+    this.loadVip()
     await this.loadUserEmail()
     // 从登录页带「bind」意图返回 → 直接进「账户设置」页（绑定弹窗在那边自动弹出）
     if (uni.getStorageSync('eat_open_bind_after_login')) {
@@ -165,14 +147,16 @@ export default {
     }
   },
   methods: {
+    // 会员态静默拉取：失败不影响我的页（未部署会员时开关关着也只是不显示会员徽标）
+    async loadVip() {
+      try { this.vip = await paymentApi.plans() } catch (e) {}
+    },
     async load() {
       try {
-        const [diners, records, recipes, shops, tags] = await Promise.all([
-          dinerApi.list(), recordApi.list(), recipeApi.list(), shopApi.list(), tasteApi.list().catch(() => [])
+        const [family, records, recipes, shops] = await Promise.all([
+          familyApi.mine().catch(() => null), recordApi.list(), recipeApi.list(), shopApi.list()
         ])
-        this.diners = diners
-        // 口味标签池（用于干饭成员口味维护 chip 选点）
-        this.allTags = (tags || []).map((t) => t.name).filter(Boolean)
+        this.family = (family && family.family) || null
         // 统计条（取自真实数据，实时算）
         this.weekCount = this.countThisWeek(records)
         this.myRecipes = recipes.filter((r) => r.source === 'my').length
@@ -190,42 +174,6 @@ export default {
         return !isNaN(d) && d >= start
       }).length
     },
-    // 两个入口统一走居中弹窗（mode: diner 新增成员 / tags 编辑口味）
-    addDiner() {
-      this.form = { show: true, mode: 'diner', title: '添加成员', val: '', hint: '姓名', id: null }
-    },
-    editDiner(d) {
-      this.tagSel = [...(d.tags || [])]   // 回填当前成员已选口味
-      this.form = { show: true, mode: 'tags', title: '编辑口味', val: '', hint: '', id: d.id }
-    },
-    toggleTag(t) {
-      const i = this.tagSel.indexOf(t)
-      if (i >= 0) this.tagSel.splice(i, 1)
-      else this.tagSel.push(t)
-      this.tagSel = [...this.tagSel]
-    },
-    async saveForm() {
-      const v = (this.form.val || '').trim()
-      if (this.form.mode === 'diner') {
-        if (!v) return uni.showToast({ title: '姓名不能为空', icon: 'none' })
-        await dinerApi.create({ name: v, tags: [] })
-      } else if (this.form.mode === 'tags') {
-        // 口味 chip 点选结果（全来自 tasteApi 维护的标签）
-        await dinerApi.updateTags(this.form.id, [...this.tagSel])
-      }
-      this.form.show = false
-      this.load()
-    },
-    // 移除干饭成员：二次确认，失败要提示
-    delDiner(d) {
-      uni.showModal({
-        title: '移除成员', content: `移除「${d.name}」？其口味偏好设置将一并删除。`, confirmText: '移除', confirmColor: '#e64340',
-        success: async (res) => {
-          if (!res.confirm) return
-          try { await dinerApi.del(d.id); this.load() } catch (e) { uni.showToast({ title: e.message || '操作失败', icon: 'none' }) }
-        },
-      })
-    },
     nav(url) {
       // 菜谱页是 tab 页，用 reLaunch；其余二级页 navigateTo
       if (url.includes('/recipe/recipe')) return uni.reLaunch({ url })
@@ -236,12 +184,13 @@ export default {
 
     async loadUserEmail() {
       this.isLogin = !!uni.getStorageSync(request.TOKEN_KEY)
-      if (!this.isLogin) { this.userEmail = ''; this.userRole = ''; this.curName = '未登录'; this.userAvatar = ''; return }
+      if (!this.isLogin) { this.userEmail = ''; this.userRole = ''; this.curName = '未登录'; this.userAvatar = ''; this.userSignature = ''; return }
       try {
         const me = await authApi.me()
         this.userEmail = me.email || ''
         this.userRole = me.role || ''
         this.userAvatar = me.avatar || ''
+        this.userSignature = me.signature || ''
         // 昵称以账号里的为准（本地 eat_user 可能是上一账号或手填残留）
         if (me.nickname) { this.curName = me.nickname; uni.setStorageSync('eat_user', me.nickname) }
       } catch (e) {
@@ -251,6 +200,7 @@ export default {
         this.userRole = ''
         this.curName = '未登录'
         this.userAvatar = ''
+        this.userSignature = ''
       }
     },
     // 点资料头：已登录直接进「账户设置」（改头像/昵称/邮箱/退出/注销都在那）；未登录弹引导弹窗
@@ -275,20 +225,13 @@ export default {
 .page-header { display:flex; align-items:baseline; gap:16rpx; padding:20rpx var(--nav-safe-right) 20rpx 24rpx; padding-top:calc(env(safe-area-inset-top) + 20rpx); }
 .page-title { font-size:44rpx; font-weight:700; }
 .section { padding: 12rpx 24rpx; }
-.sec-head { display:flex; align-items:center; justify-content:space-between; margin:6rpx 0 16rpx; }
-.sec-title { font-size:32rpx; font-weight:700; }
 .newlink { color:var(--brand); font-size:26rpx; }
 
 /* 居中弹窗 */
 .mask { position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,0.45); z-index:999; display:flex; align-items:center; justify-content:center; padding:48rpx; }
 .dialog { width:100%; max-width:560rpx; background:var(--card); border-radius:20rpx; padding:32rpx; }
 .d-title { font-size:32rpx; font-weight:700; display:block; margin-bottom:20rpx; }
-.dfi { background:var(--bg); border-radius:12rpx; height:84rpx; line-height:84rpx; padding:0 16rpx; margin-bottom:24rpx; font-size:28rpx; width:100%; box-sizing:border-box; color:var(--text); }
 .d-btns { display:flex; gap:16rpx; justify-content:flex-end; flex-wrap:wrap; }
-/* 弹窗内口味 chip 网格：6列 × 最多2行，超出滚动 */
-.tag-grid { display:grid; grid-template-columns:repeat(6, 1fr); gap:10rpx; max-height:200rpx; overflow-y:auto; align-content:start; margin-bottom:12rpx; }
-.t-chip { text-align:center; font-size:24rpx; padding:10rpx 4rpx; border:1rpx solid var(--border); border-radius:10rpx; background:var(--bg); }
-.t-chip.on { background:var(--brand); color:#fff; border-color:var(--brand); }
 
 /* 账号弹窗（未登录引导） */
 .d-sub { font-size:22rpx; color:var(--text-2); display:block; margin-bottom:12rpx; }
@@ -309,16 +252,6 @@ export default {
 .sc + .sc { border-left:1rpx solid var(--border); }
 .st-num { font-size:40rpx; font-weight:700; color:var(--brand); }
 .st-lab { font-size:22rpx; color:var(--text-2); text-align:center; }
-
-/* 干饭成员 */
-.row { margin-bottom:16rpx; }
-.row-top { display:flex; align-items:center; gap:12rpx; }
-.name { font-weight:600; font-size:30rpx; }
-.sp { flex:1; }
-.op { color:var(--brand); font-size:24rpx; padding:4rpx 8rpx; }
-.op.danger { color:var(--danger); }
-.row-bottom { display:flex; flex-wrap:wrap; gap:8rpx; margin-top:10rpx; }
-.t-pill { font-size:20rpx; color:var(--text-2); background:var(--bg); padding:3rpx 12rpx; border-radius:999rpx; }
 
 /* 功能菜单 */
 .menu { background:var(--card); border:1rpx solid var(--border); border-radius:var(--radius-lg,16rpx); overflow:hidden; }

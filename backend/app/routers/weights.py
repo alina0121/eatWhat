@@ -7,6 +7,7 @@ from sqlite3 import Connection
 
 from app.db import get_db, row_to_dict
 from app.routers.auth import get_optional_user, get_write_user
+from app.vip import view_cutoff
 
 router = APIRouter(prefix="/weights", tags=["weights"])
 
@@ -32,6 +33,9 @@ def list_weights(user: int = Depends(get_optional_user),
     rows = conn.execute(
         "SELECT * FROM weights WHERE user_id=? ORDER BY date", (user,)
     ).fetchall()
+    cutoff = view_cutoff(conn, user, "weights")  # 非会员回看限制（None=不限）
+    if cutoff:
+        rows = [r for r in rows if r["date"] >= cutoff]
     return [row_to_dict(r) for r in rows]
 
 

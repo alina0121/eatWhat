@@ -3,14 +3,23 @@
 配置表路由：统一读写环境参数（审核开关、临期阈值等）。
 配置不散落在代码里，运维只要改数据库键值即可。
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlite3 import Connection
 
 from app.db import get_db
-from .auth import get_write_user
+from .auth import get_write_user, _admin_uid
 
 router = APIRouter(prefix="/configs", tags=["configs"])
+
+# 敏感配置：只有管理台令牌能读原文/写（普通登录用户写了会自助发会员/改口令/改密钥，必须拦）。
+# 定义在本模块（vip.py 依赖本模块，反向 import 会循环）
+ADMIN_ONLY_KEYS = {
+    "vip_enabled", "vip_pay_mode", "free_quota", "vip_plans",
+    "wxpay_offer_id", "wxpay_pay_key",
+    "admin_passcode", "jwt_secret", "mp_secret", "smtp_pass",
+}
+_MASK = "******"
 
 
 class ConfigIn(BaseModel):
@@ -33,24 +42,41 @@ def set_config(conn: Connection, key: str, value: str) -> None:
 
 
 @router.get("")
-def list_configs(conn: Connection = Depends(get_db)):
-    """返回全部配置（key/value 键值对）。"""
+def list_configs(request: Request, conn: Connection = Depends(get_db)):
+    """返回全部配置（key/value 键值对）。
+
+    敏感键（口令/密钥/会员参数）仅管理台令牌能读到原文，其余一律打码——
+    这些值泄了等于把管理台和收款能力拱手送人。
+    """
+    admin = _admin_uid(request, conn) is not None
     rows = conn.execute("SELECT key, value FROM configs ORDER BY key").fetchall()
-    return [{"key": r["key"], "value": r["value"]} for r in rows]
+    return [{"key": r["key"],
+             "value": r["value"] if (admin or r["key"] not in ADMIN_ONLY_KEYS) else _MASK}
+            for r in rows]
 
 
 @router.get("/{key}")
-def get_one(key: str, conn: Connection = Depends(get_db)):
-    """读单个配置，不存在返回 404。"""
+def get_one(key: str, request: Request, conn: Connection = Depends(get_db)):
+    """读单个配置，不存在返回 404。敏感键同样仅管理台可见原文。"""
     row = conn.execute("SELECT value FROM configs WHERE key=?", (key,)).fetchone()
     if not row:
         raise HTTPException(404, f"配置不存在: {key}")
+    admin = _admin_uid(request, conn) is not None
+    if key in ADMIN_ONLY_KEYS and not admin:
+        raise HTTPException(403, "该配置仅管理员可读")
     return {"key": key, "value": row["value"]}
 
 
 @router.put("/{key}")
-def update_config(key: str, body: ConfigIn, conn: Connection = Depends(get_db),
-                  _admin: int = Depends(get_write_user)):
-    """写单个配置（新增或更新）。仅登录用户 / 管理台可写。"""
+def update_config(key: str, body: ConfigIn, request: Request,
+                  conn: Connection = Depends(get_db),
+                  _user: int = Depends(get_write_user)):
+    """写单个配置（新增或更新）。
+
+    普通登录用户只能改非敏感配置；会员/支付/口令/密钥类配置必须持管理台令牌
+    （X-Admin-Token）——否则任何登录用户都能自助改免费额度给自己发会员。
+    """
+    if key in ADMIN_ONLY_KEYS and _admin_uid(request, conn) is None:
+        raise HTTPException(403, "该配置仅管理员可修改")
     set_config(conn, key, body.value)
     return {"key": key, "value": body.value, "ok": True}

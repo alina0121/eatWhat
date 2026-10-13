@@ -264,6 +264,7 @@ def login(body: LoginBody, conn=Depends(get_conn)):
 class ProfileIn(BaseModel):
     nickname: Optional[str] = None
     avatar: Optional[str] = None
+    signature: Optional[str] = None
 
 
 @router.put("/profile")
@@ -272,7 +273,7 @@ def update_profile(
     uid: int = Depends(get_current_user),
     conn=Depends(get_conn),
 ):
-    """更新当前用户的昵称/头像。"""
+    """更新当前用户的昵称/头像/个性签名。"""
     cols, vals = [], []
     if body.nickname is not None:
         nick = body.nickname.strip()[:20]
@@ -285,19 +286,22 @@ def update_profile(
     if body.avatar is not None:
         cols.append("avatar=?")
         vals.append(body.avatar)
+    if body.signature is not None:
+        cols.append("signature=?")
+        vals.append(body.signature.strip()[:30])
     if not cols:
         raise HTTPException(status_code=400, detail="无更新字段")
     vals.append(uid)
     conn.execute(f"UPDATE users SET {','.join(cols)} WHERE id=?", vals)
     conn.commit()
-    row = conn.execute("SELECT id, nickname, avatar FROM users WHERE id=?", (uid,)).fetchone()
+    row = conn.execute("SELECT id, nickname, avatar, signature FROM users WHERE id=?", (uid,)).fetchone()
     return dict(row)
 
 
 @router.get("/me")
 def get_me(uid: int = Depends(get_current_user), conn=Depends(get_conn)):
     """获取当前登录用户信息（含绑定邮箱，前端「我的」页展示用）。"""
-    row = conn.execute("SELECT id, nickname, avatar, role, email FROM users WHERE id=?", (uid,)).fetchone()
+    row = conn.execute("SELECT id, nickname, avatar, signature, role, email FROM users WHERE id=?", (uid,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="用户不存在")
     return dict(row)
@@ -530,7 +534,7 @@ def unbind_email(uid: int = Depends(get_current_user), conn=Depends(get_conn)):
 # ---------------------------------------------------------------------------
 # 所有带 user_id 的业务表，注销时级联清理（表名必须与 db.py 实际建表一致）
 _CASCADE_TABLES = [
-    "recipes", "shops", "diners", "records", "weights", "tips",
+    "recipes", "shops", "records", "weights", "tips",
     "fridge_items", "purchase", "eat_inbox",
     "categories", "ingredients", "taste_tags",
 ]
@@ -564,6 +568,20 @@ def delete_my_account(uid: int = Depends(get_current_user), conn=Depends(get_con
         "UPDATE tips SET user_id=? WHERE user_id=? AND status='approved'",
         (admin_id, uid),
     )
+
+    # 1.6 家庭空间清理：创建者注销 → 解散家庭并清空家庭候选池；普通成员注销 → 仅退出
+    fam = conn.execute("SELECT id FROM families WHERE owner_id=?", (uid,)).fetchone()
+    if fam:
+        fid = fam["id"]
+        conn.execute(
+            "DELETE FROM tracks WHERE inbox_id IN (SELECT id FROM eat_inbox WHERE family_id=?)",
+            (fid,),
+        )
+        conn.execute("DELETE FROM eat_inbox WHERE family_id=?", (fid,))
+        conn.execute("DELETE FROM family_members WHERE family_id=?", (fid,))
+        conn.execute("DELETE FROM families WHERE id=?", (fid,))
+    else:
+        conn.execute("DELETE FROM family_members WHERE user_id=?", (uid,))
 
     # 2. 级联删除所有业务表数据
     deleted_counts = {}

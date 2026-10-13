@@ -2,7 +2,7 @@
 """
 FastAPI 应用入口：CORS + 路由挂载 + 健康检查。
 
-启动：cd backend && uvicorn app.main:app --reload --port 8000
+启动：cd backend && uvicorn app.main:app --reload --port 8001
 （或直接 python run.py）
 """
 from pathlib import Path
@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.db import init_db
 from app.routers import (
-    admin, auth, candidates, categories, configs, diners, fridge, ingredients, mine, recipes, records, shops, taste_tags, tips, weights,
+    admin, auth, candidates, categories, configs, families, fridge, ingredients, mine, payments, recipes, records, shops, taste_tags, tips, weights,
 )
 
 # 幂等初始化数据库（首次启动自动建表+种子）
@@ -39,12 +39,13 @@ app.include_router(fridge.router)
 app.include_router(ingredients.router)
 app.include_router(categories.router)
 app.include_router(candidates.router)
+app.include_router(families.router)
 app.include_router(shops.router)
-app.include_router(diners.router)
 app.include_router(tips.router)
 app.include_router(records.router)
 app.include_router(weights.router)
 app.include_router(taste_tags.router)
+app.include_router(payments.router)
 
 
 @app.get("/health")

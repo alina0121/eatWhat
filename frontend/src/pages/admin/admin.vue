@@ -78,6 +78,48 @@
           <text class="none" v-if="!users.length">还没有用户</text>
         </template>
 
+        <!-- ============ 1.5 会员管理 ============ -->
+        <template v-if="sec === 'vip'">
+          <view class="sec-h">
+            <text class="sh-t">会员管理</text>
+            <view class="sec-act"><view class="pbtn ghost" @tap="loadVip">↻ 刷新</view></view>
+          </view>
+          <view class="kpis" v-if="vipData">
+            <view class="kpi card" v-for="k in vipKpis" :key="k.t">
+              <text class="kpi-ic">{{ k.ic }}</text>
+              <text class="kpi-num">{{ k.v }}</text>
+              <text class="kpi-t">{{ k.t }}</text>
+            </view>
+          </view>
+
+          <!-- 会员列表（含过期） -->
+          <text class="sh-t block" style="margin-top:24rpx">会员（{{ vipMembers.length }}）</text>
+          <view class="row card" v-for="m in vipMembers" :key="m.id">
+            <view class="uico">{{ m.expires_at > nowSec ? '👑' : '⏳' }}</view>
+            <view class="uc">
+              <text class="sn">{{ m.nickname || m.name || ('用户' + m.id) }}</text>
+              <text class="sm">{{ m.email || '未绑定邮箱' }} · {{ m.expires_at > nowSec ? '生效中' : '已过期' }} · 至 {{ fmtTs(m.expires_at) }}</text>
+            </view>
+            <view class="sp"></view>
+            <view class="pbtn ghost" @tap="grantVip(m)">＋赠送</view>
+            <view class="pbtn danger" v-if="m.expires_at > nowSec" @tap="revokeVip(m)">✕取消</view>
+          </view>
+          <text class="none" v-if="vipData && !vipMembers.length">还没有会员（订单支付后自动生成，也可在下方手工赠送）</text>
+
+          <!-- 订单流水 -->
+          <text class="sh-t block" style="margin-top:24rpx">订单流水（最近 100 笔）</text>
+          <view class="row card" v-for="o in (vipData ? vipData.orders : [])" :key="o.out_trade_no">
+            <view class="uico">{{ o.status === 'paid' ? '✅' : (o.status === 'refunded' ? '↩️' : '⌛') }}</view>
+            <view class="uc">
+              <text class="sn">{{ (o.nickname || ('用户' + o.user_id)) + ' · ' + planName(o.plan_id) + ' ¥' + fen2yuan(o.price_fen) }}</text>
+              <text class="sm">{{ o.out_trade_no }} · {{ o.env === 1 ? 'iOS' : '安卓/其他' }} · {{ o.paid_at ? fmtTs(o.paid_at) : '未支付' }}</text>
+            </view>
+            <view class="sp"></view>
+            <text class="sm">{{ o.status }}</text>
+          </view>
+          <text class="none" v-if="vipData && !vipData.orders.length">暂无订单</text>
+        </template>
+
         <!-- ============ 1. 厨房技巧审核 ============ -->
         <template v-if="sec === 'tips'">
           <view class="sec-h"><text class="sh-t">厨房技巧审核</text><text class="sh-s">对待审核内容「通过 / 退回」</text></view>
@@ -378,6 +420,7 @@ export default {
       menus: [
         { k: 'stats', ic: '📊', t: '统计' },
         { k: 'users', ic: '👥', t: '用户管理' },
+        { k: 'vip', ic: '👑', t: '会员' },
         { k: 'tips', ic: '👨‍🍳', t: '厨房技巧审核' },
         { k: 'ref', ic: '📚', t: '参考菜谱' },
         { k: 'cat', ic: '🗂️', t: '食材大类' },
@@ -386,6 +429,8 @@ export default {
       ],
       DEFAULT_GRAD,
       sec: 'stats', curName: '', isAdmin: false, curAdminId: 0,
+      // 会员管理（切到「会员」页签时加载）
+      vipData: null, vipKpis: [], vipMembers: [], nowSec: 0, planNames: {},
       // 登录
       loginCode: '',
       // 统计（仅公共资源计数）
@@ -491,6 +536,58 @@ export default {
     onNav(m) {
       this.sec = m.k
       if (m.k === 'config') this.loadConfigs()
+      if (m.k === 'vip') this.loadVip()
+    },
+    // —— 会员管理 ——
+    fmtTs(ts) {
+      if (!ts) return '-'
+      const d = new Date(ts * 1000)
+      return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+    },
+    fen2yuan(fen) { return (Number(fen || 0) / 100).toFixed(fen % 100 === 0 ? 0 : 2) },
+    planName(id) { return (this.planNames && this.planNames[id]) || id },
+    async loadVip() {
+      try {
+        const [vip, planCfg] = await Promise.all([
+          adminApi.vip(),
+          configApi.get('vip_plans').catch(() => ({ value: '{}' })),
+        ])
+        this.vipData = vip
+        this.nowSec = Math.floor(Date.now() / 1000)
+        this.vipMembers = vip.members
+        try { this.planNames = JSON.parse(planCfg.value || '{}') } catch (e) { this.planNames = {} }
+        const k = vip.kpi
+        this.vipKpis = [
+          { ic: '👑', v: k.member_count, t: '生效中会员' },
+          { ic: '⏳', v: k.expired_count, t: '已过期' },
+          { ic: '🧾', v: k.order_count, t: '已支付订单' },
+          { ic: '💰', v: '¥' + this.fen2yuan(k.revenue_fen), t: '累计收入' + (k.revenue_ios_fen ? `（iOS ¥${this.fen2yuan(k.revenue_ios_fen)}）` : '') },
+        ]
+      } catch (e) { this._err(e) }
+    },
+    grantVip(m) {
+      uni.showModal({
+        title: `赠送会员（${m.nickname || m.name || '用户' + m.id}）`,
+        content: '', editable: true, placeholderText: '天数，叠加到当前到期时间，如 30',
+        success: (r) => {
+          if (!r.confirm) return
+          const days = Number(r.content)
+          adminApi.grantVip(m.id, days)
+            .then(() => { uni.showToast({ title: '已赠送', icon: 'success' }); this.loadVip() })
+            .catch(this._err)
+        },
+      })
+    },
+    revokeVip(m) {
+      uni.showModal({
+        title: '取消会员', content: `确认取消「${m.nickname || '用户' + m.id}」的会员？即时失效，订单留痕。`,
+        success: (r) => {
+          if (!r.confirm) return
+          adminApi.revokeVip(m.id)
+            .then(() => { uni.showToast({ title: '已取消', icon: 'success' }); this.loadVip() })
+            .catch(this._err)
+        },
+      })
     },
     // —— 系统配置 ——
     splitIcons(v) { return (v || '').split(/[,，]/).map((s) => s.trim()).filter(Boolean) },

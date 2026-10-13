@@ -43,12 +43,12 @@
 
 ## 🚀 本地运行
 
-### 1. 后端（端口 8000）
+### 1. 后端（端口 8001）
 
 ```bash
 cd backend
 pip install -r requirements.txt
-python run.py            # 等价 uvicorn app.main:app --reload --port 8000
+python run.py            # 等价 uvicorn app.main:app --reload --port 8001（固定 8001，避免与其他项目冲突）
 ```
 
 首次启动会自动 `init_db()`：建全部表、写入默认配置（审核开关、临期阈值）、种子数据（默认食材大类、封面图库）。

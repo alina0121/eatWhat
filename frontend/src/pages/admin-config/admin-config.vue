@@ -125,6 +125,60 @@
           </view>
         </view>
 
+        <!-- ============ 5. 会员与收款 ============ -->
+        <view class="gsec">
+          <text class="g-h">会员与收款（VIP）</text>
+          <text class="g-s">全部参数配置表驱动，改完即生效；额度/回看天数填 0 或留空 = 该项不限</text>
+          <view class="card">
+            <view class="row">
+              <view class="rc"><text class="rt">会员体系开关</text><text class="rs">关 = 一切限制解除（额度/回看不生效）</text></view>
+              <switch :checked="vipEnabled" @change="onVipEnabled" />
+            </view>
+            <view class="row">
+              <view class="rc"><text class="rt">支付模式</text><text class="rs">mock=沙箱下单即开通（联调）；wxpay=微信虚拟支付（需签约+配商户参数）</text></view>
+              <view class="modeseg">
+                <text class="mopt" :class="{ on: vipMode === 'mock' }" @tap="setVipMode('mock')">mock</text>
+                <text class="mopt" :class="{ on: vipMode === 'wxpay' }" @tap="setVipMode('wxpay')">wxpay</text>
+              </view>
+            </view>
+            <view class="col">
+              <text class="rt">免费额度（条）</text>
+              <view class="fgrid">
+                <view class="fitem"><text class="fl">菜谱</text><input class="num" type="number" v-model="fqRecipes" @blur="saveFreeQuota()" /></view>
+                <view class="fitem"><text class="fl">食材</text><input class="num" type="number" v-model="fqIngredients" @blur="saveFreeQuota()" /></view>
+                <view class="fitem"><text class="fl">餐厅</text><input class="num" type="number" v-model="fqShops" @blur="saveFreeQuota()" /></view>
+                <view class="fitem"><text class="fl">技巧</text><input class="num" type="number" v-model="fqTips" @blur="saveFreeQuota()" /></view>
+              </view>
+            </view>
+            <view class="col">
+              <text class="rt">历史回看限制（天，仅非会员）</text>
+              <view class="fgrid">
+                <view class="fitem"><text class="fl">干饭记录</text><input class="num" type="number" v-model="fqRecordsDays" @blur="saveFreeQuota()" /></view>
+                <view class="fitem"><text class="fl">体重</text><input class="num" type="number" v-model="fqWeightsDays" @blur="saveFreeQuota()" /></view>
+              </view>
+            </view>
+            <view class="col">
+              <text class="rt">套餐价格（元，改完失焦保存）</text>
+              <view class="fgrid">
+                <view class="fitem"><text class="fl">包月价</text><input class="num" type="digit" v-model="planMonthlyPrice" @blur="savePlans()" /></view>
+                <view class="fitem"><text class="fl">包月天数</text><input class="num" type="number" v-model="planMonthlyDays" @blur="savePlans()" /></view>
+                <view class="fitem"><text class="fl">年卡价</text><input class="num" type="digit" v-model="planYearlyPrice" @blur="savePlans()" /></view>
+                <view class="fitem"><text class="fl">年卡天数</text><input class="num" type="number" v-model="planYearlyDays" @blur="savePlans()" /></view>
+              </view>
+            </view>
+            <view class="col">
+              <text class="rt">虚拟支付 Offer ID</text>
+              <text class="rs">小程序后台「虚拟支付 - 基础配置」里获取</text>
+              <input class="num full" v-model="wxpayOfferId" @blur="save('wxpay_offer_id', wxpayOfferId)" placeholder="wx开头的offerId" />
+            </view>
+            <view class="col last">
+              <text class="rt">虚拟支付 Pay Key</text>
+              <text class="rs">用于支付签名与查单对账，务必保密</text>
+              <input class="num full" type="password" v-model="wxpayPayKey" @blur="save('wxpay_pay_key', wxpayPayKey)" placeholder="pay_key" />
+            </view>
+          </view>
+        </view>
+
         <view class="tail">修改输入框后失焦（点别处）即自动保存</view>
         <view class="pad"></view>
       </view>
@@ -153,6 +207,12 @@ export default {
       gradPool: '',
       smtpHost: '', smtpPort: '465', smtpUser: '', smtpPass: '', smtpFrom: '', otpExpire: '10',
       jwtSecret: '', mpAppid: '', mpSecret: '',
+      // 会员与收款
+      vipEnabled: false, vipMode: 'mock',
+      fqRecipes: '20', fqIngredients: '50', fqShops: '10', fqTips: '10',
+      fqRecordsDays: '60', fqWeightsDays: '90',
+      planMonthlyPrice: '6', planMonthlyDays: '30', planYearlyPrice: '45', planYearlyDays: '365',
+      wxpayOfferId: '', wxpayPayKey: '',
     }
   },
   computed: {
@@ -189,6 +249,7 @@ export default {
           'ingredient_icon_pool', 'cat_icon_pool', 'recipe_emoji_pool', 'shop_icon_pool', 'cover_grad_pool',
           'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'otp_expire_min',
           'jwt_secret', 'mp_appid', 'mp_secret',
+          'vip_enabled', 'vip_pay_mode', 'free_quota', 'vip_plans', 'wxpay_offer_id', 'wxpay_pay_key',
         ]
         const res = await Promise.all(keys.map((k) => configApi.get(k).catch(() => ({ value: '' }))))
         const v = {}
@@ -211,6 +272,27 @@ export default {
         this.jwtSecret = v.jwt_secret
         this.mpAppid = v.mp_appid
         this.mpSecret = v.mp_secret
+        // 会员与收款（free_quota / vip_plans 是 JSON，解析失败回默认）
+        this.vipEnabled = v.vip_enabled === '1'
+        this.vipMode = v.vip_pay_mode || 'mock'
+        try {
+          const fq = JSON.parse(v.free_quota || '{}')
+          this.fqRecipes = String(fq.recipes ?? 20)
+          this.fqIngredients = String(fq.ingredients ?? 50)
+          this.fqShops = String(fq.shops ?? 10)
+          this.fqTips = String(fq.tips ?? 10)
+          this.fqRecordsDays = String(fq.records_view_days ?? 60)
+          this.fqWeightsDays = String(fq.weights_view_days ?? 90)
+        } catch (e) {}
+        try {
+          const vp = JSON.parse(v.vip_plans || '{}')
+          this.planMonthlyPrice = String((vp.monthly?.price_fen ?? 600) / 100)
+          this.planMonthlyDays = String(vp.monthly?.days ?? 30)
+          this.planYearlyPrice = String((vp.yearly?.price_fen ?? 4500) / 100)
+          this.planYearlyDays = String(vp.yearly?.days ?? 365)
+        } catch (e) {}
+        this.wxpayOfferId = v.wxpay_offer_id
+        this.wxpayPayKey = v.wxpay_pay_key
       } catch (e) {
         uni.showToast({ title: e.message || '加载失败', icon: 'none' })
       }
@@ -245,6 +327,45 @@ export default {
       this.audit = e.detail.value
       configApi.set('audit_enabled', this.audit ? '1' : '0')
         .then(() => uni.showToast({ title: '已保存', icon: 'none', duration: 700 }))
+        .catch((err) => uni.showToast({ title: err.message || '保存失败', icon: 'none' }))
+    },
+    // ===== 会员与收款 =====
+    onVipEnabled(e) {
+      this.vipEnabled = e.detail.value
+      configApi.set('vip_enabled', this.vipEnabled ? '1' : '0')
+        .then(() => uni.showToast({ title: '已保存', icon: 'none', duration: 700 }))
+        .catch((err) => uni.showToast({ title: err.message || '保存失败', icon: 'none' }))
+    },
+    setVipMode(m) {
+      this.vipMode = m
+      configApi.set('vip_pay_mode', m)
+        .then(() => uni.showToast({ title: '已保存', icon: 'none', duration: 700 }))
+        .catch((err) => uni.showToast({ title: err.message || '保存失败', icon: 'none' }))
+    },
+    // 免费额度整体保存（任一输入框失焦都全量落库，避免半写状态）
+    saveFreeQuota() {
+      const quota = {
+        recipes: Number(this.fqRecipes) || 0,
+        ingredients: Number(this.fqIngredients) || 0,
+        shops: Number(this.fqShops) || 0,
+        tips: Number(this.fqTips) || 0,
+        records_view_days: Number(this.fqRecordsDays) || 0,
+        weights_view_days: Number(this.fqWeightsDays) || 0,
+      }
+      configApi.set('free_quota', JSON.stringify(quota))
+        .then(() => uni.showToast({ title: '额度已保存', icon: 'none', duration: 700 }))
+        .catch((err) => uni.showToast({ title: err.message || '保存失败', icon: 'none' }))
+    },
+    // 套餐整体保存：价格按元输入，落库转分；0/负数视为非法不动
+    savePlans() {
+      const yuan2fen = (v) => Math.round(Number(v) * 100)
+      const monthly = { name: '连续包月', price_fen: yuan2fen(this.planMonthlyPrice), days: Number(this.planMonthlyDays) || 0 }
+      const yearly = { name: '年卡', price_fen: yuan2fen(this.planYearlyPrice), days: Number(this.planYearlyDays) || 0, hot: 1 }
+      if (monthly.price_fen <= 0 || yearly.price_fen <= 0) {
+        return uni.showToast({ title: '价格需大于 0 元', icon: 'none' })
+      }
+      configApi.set('vip_plans', JSON.stringify({ monthly, yearly }))
+        .then(() => uni.showToast({ title: '套餐已保存', icon: 'none', duration: 700 }))
         .catch((err) => uni.showToast({ title: err.message || '保存失败', icon: 'none' }))
     },
     // 图标池：保存后同步刷新预览数组
@@ -296,4 +417,12 @@ export default {
 
 .tail { text-align:center; font-size:22rpx; color:var(--text-2); padding:8rpx 0 20rpx; }
 .pad { height:40rpx; }
+/* 会员与收款 */
+.modeseg { display:flex; border:1rpx solid var(--border,#e5e5e5); border-radius:12rpx; overflow:hidden; }
+.mopt { padding:10rpx 28rpx; font-size:26rpx; color:var(--text-2); background:#f7f7f9; }
+.mopt.on { color:#fff; background:var(--brand,#4b3fe3); font-weight:700; }
+.fgrid { display:flex; flex-wrap:wrap; gap:16rpx; margin-top:10rpx; }
+.fitem { display:flex; align-items:center; gap:10rpx; }
+.fl { font-size:24rpx; color:var(--text-2); }
+.fitem .num { width:140rpx; }
 </style>

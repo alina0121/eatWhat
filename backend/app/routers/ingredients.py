@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 食材库路由：双层模型——公共（scope=public）+ 用户私有补录（scope=user）。
 
@@ -15,6 +15,7 @@ from typing import Optional
 
 from app.db import get_db, row_to_dict
 from .auth import get_optional_user, get_write_user
+from app.vip import check_quota
 
 router = APIRouter(prefix="/ingredients", tags=["ingredients"])
 
@@ -84,6 +85,8 @@ def create_ingredient(body: IngredientIn,
     name = body.name.strip()
     if not name:
         raise HTTPException(422, "名称不能为空")
+    if not public:
+        check_quota(conn, user, "ingredients")  # 会员额度：管理员录公共层不受限
 
     if public:
         # 管理员录公共层：只跟公共层比不重

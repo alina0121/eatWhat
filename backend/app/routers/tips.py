@@ -20,6 +20,7 @@ from app.db import get_db, row_to_dict
 from app.routers.auth import get_optional_user, get_write_user
 from app.routers.configs import get_config
 from app.wxsec import check_text
+from app.vip import check_quota
 
 router = APIRouter(prefix="/tips", tags=["tips"])
 
@@ -93,6 +94,7 @@ def create_tip(body: TipIn,
     if not ok:
         raise HTTPException(400, reason)
     status = _initial_status(conn)
+    check_quota(conn, user, "tips")  # 会员额度：自建技巧条数
     cur = conn.execute(
         "INSERT INTO tips(user_id,title,content,cat,author,pub,status) VALUES(?,?,?,?,?,?,?)",
         (user, body.title, body.content, body.cat, body.author, int(body.pub), status),
