@@ -138,6 +138,8 @@ eatWhat/
 - **微信小程序**：启动即静默 `wx.login` 换 openid（未配 mp_appid/secret 时用 `mock_openid` 稳定化）；登录后可绑定邮箱。
 - **写操作鉴权**：未登录（无用户 token / 管理台令牌）一律 401；`get_write_user` 依赖同时接受用户 token 或管理台独立令牌。
 - **PC 管理端**：口令登录（配置表 `admin_passcode`，默认 123456），后端签发独立管理员令牌 `X-Admin-Token`，与用户端 `eat_token` 并存。
+- **验证码始终打印后端日志**：邮箱验证码在发信前无条件写入日志（`logger.warning`），SMTP 未配置 / 配错 / 发信失败时都能直接从日志取码登录，避免没有邮件通道时把自己锁在门外。
+  本地看 uvicorn 控制台输出；生产用 `journalctl -u eatwhat | grep OTP`。
 - **openid 唯一**：`CREATE UNIQUE INDEX idx_users_openid ON users(openid)`，一个微信号一个账号。
 
 ---
