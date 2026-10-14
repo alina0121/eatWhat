@@ -72,7 +72,7 @@
           <view class="mrow" @tap="nav('/pages/mine-data/mine-data')">
             <text class="ic">📊</text><view class="m1"><text class="mt">我的数据</text><text class="ms">计数 · 本月干饭 · 体重趋势</text></view><text class="ar">›</text>
           </view>
-          <view class="mrow" @tap="goAccountSettings">
+          <view class="mrow" @tap="openAccount">
             <text class="ic">⚙️</text><view class="m1"><text class="mt">账户设置</text><text class="ms">邮箱绑定 · 退出登录 · 注销账户</text></view><text class="ar">›</text>
           </view>
           <!-- #ifdef H5 -->
@@ -137,9 +137,11 @@ export default {
   async onShow() {
     // 昵称占位：未登录时显示「未登录」，避免与任何真实账号混淆
     this.curName = uni.getStorageSync('eat_user') || '未登录'
+    // 先校验登录态（失效 token 会在 /auth/me 401 时被清掉），再拉业务数据，
+    // 避免带着失效 token 请求导致「显示未登录却还有数据」的错乱
+    await this.loadUserEmail()
     this.load()
     this.loadVip()
-    await this.loadUserEmail()
     // 从登录页带「bind」意图返回 → 直接进「账户设置」页（绑定弹窗在那边自动弹出）
     if (uni.getStorageSync('eat_open_bind_after_login')) {
       uni.removeStorageSync('eat_open_bind_after_login')

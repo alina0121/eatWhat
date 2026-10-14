@@ -82,19 +82,29 @@ def verify_token(conn, token: str) -> Optional[int]:
 # ---------------------------------------------------------------------------
 # 依赖：从 Authorization header 解 user_id
 # ---------------------------------------------------------------------------
+def _user_exists(conn, uid: int) -> bool:
+    """该 user_id 是否对应真实存在的用户。
+
+    token 验签通过只说明「签名是我们签的、没过期」，并不保证这个人还在：
+    重建库 / 注销账户后，客户端可能仍留着指向已删除用户的旧 token。
+    这种 token 必须当作未登录处理，否则会用失效身份读到该 uid 的残留数据。
+    """
+    return conn.execute("SELECT 1 FROM users WHERE id=?", (uid,)).fetchone() is not None
+
+
 async def get_current_user(request: Request, conn=Depends(get_conn)) -> int:
-    """严格鉴权：缺 token 或无效 → 401。"""
+    """严格鉴权：缺 token、无效、或用户已不存在 → 401。"""
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="未登录")
     uid = verify_token(conn, auth[7:])
-    if uid is None:
-        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    if uid is None or not _user_exists(conn, uid):
+        raise HTTPException(status_code=401, detail="登录已失效，请重新登录")
     return uid
 
 
 async def get_optional_user(request: Request, conn=Depends(get_conn)) -> int:
-    """宽松鉴权：有 token 就解出真实 user_id，没有则返回 0。
+    """宽松鉴权：有有效 token 且用户真实存在，才返回其 user_id；否则返回 0。
 
     0 = 未登录游客，不是任何真实账号：业务表里不存在 user_id=0 的历史数据，
     所以未登录时各页天然是空态。这里绝不能回退到 1 号 —— 那会把 1 号账号
@@ -103,7 +113,7 @@ async def get_optional_user(request: Request, conn=Depends(get_conn)) -> int:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         uid = verify_token(conn, auth[7:])
-        if uid is not None:
+        if uid is not None and _user_exists(conn, uid):
             return uid
     return 0
 
@@ -141,7 +151,8 @@ async def get_write_user(request: Request, conn=Depends(get_conn)) -> int:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         uid = verify_token(conn, auth[7:])
-        if uid is not None and uid > 0:
+        # 用户不存在时不能放行写操作（同 get_current_user 的判定）
+        if uid is not None and uid > 0 and _user_exists(conn, uid):
             return uid
     auid = _admin_uid(request, conn)
     if auid is not None:
@@ -305,7 +316,9 @@ def get_me(uid: int = Depends(get_current_user), conn=Depends(get_conn)):
     """获取当前登录用户信息（含绑定邮箱，前端「我的」页展示用）。"""
     row = conn.execute("SELECT id, nickname, avatar, signature, role, email FROM users WHERE id=?", (uid,)).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        # token 有效但用户已不存在（如重建库后残留旧 token）→ 按登录态失效处理：
+        # 必须 401（不能 404），request.js 只在 401 时清本地 token 并回未登录态
+        raise HTTPException(status_code=401, detail="登录已失效，请重新登录")
     return dict(row)
 
 
