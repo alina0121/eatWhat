@@ -2,7 +2,7 @@
 """
 SMTP 发邮件服务：标准库 smtplib + email.message，零依赖。
 配置全部从 configs 表读（smtp_host / smtp_port / smtp_user / smtp_pass / smtp_from）。
-没配或发失败 → 降级到后端日志打印验证码，开发期可用。
+验证码始终打印在后端日志：SMTP 未配置或发信失败时，直接从日志取码即可。
 """
 import logging
 import random
@@ -69,13 +69,13 @@ def send_otp_email(conn, to_email: str, code: str, purpose: str = "login") -> bo
         f"——吃啥好呀 Team 🧑‍🍳"
     )
 
-    # 没配 SMTP → 日志打印（开发期能用）
+    # 验证码一律打印到后端日志（warning 级：uvicorn 控制台 / systemd journalctl 都能看到）。
+    # 不只在 SMTP 未配置时打印——SMTP 配错、发信超时、被收件方拦掉时同样需要从这里取码，
+    # 否则没有邮箱通道就把自己锁在门外了。
+    logger.warning(f"[email] OTP to={to_email} purpose={purpose} code={code}")
+
+    # 没配 SMTP → 只走日志，不再尝试发信
     if not is_smtp_configured(conn):
-        logger.warning(
-            "[email] SMTP 未配置，验证码仅打印日志。"
-            f" to={to_email} purpose={purpose} code={code}"
-        )
-        print(f"📧 [OTP] to={to_email} purpose={purpose} code={code}")
         return True
 
     # 正常发邮件
@@ -110,7 +110,6 @@ def send_otp_email(conn, to_email: str, code: str, purpose: str = "login") -> bo
         logger.info(f"[email] OTP sent to={to_email} purpose={purpose}")
         return True
     except Exception as e:
-        # 发失败 → 降级日志
-        logger.warning(f"[email] SMTP 发件失败，降级日志。to={to_email} err={e}")
-        print(f"📧 [OTP FALLBACK] to={to_email} purpose={purpose} code={code}  (SMTP err: {e})")
+        # 发失败 → 验证码已在上方打印，调用方无需特殊处理
+        logger.warning(f"[email] SMTP 发件失败，请用日志里的验证码。to={to_email} err={e}")
         return True  # 对调用方来说，验证码已生成并入库，只是没发出去
