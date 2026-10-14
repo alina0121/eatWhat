@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 食材大类路由：双层模型——公共（scope=public）+ 用户私有补录（scope=user）。
 
