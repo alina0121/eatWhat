@@ -513,20 +513,34 @@ export default {
   onShow() {
     this.curName = uni.getStorageSync('eat_user') || '我'
     // 收紧写接口后：管理台必须持有有效令牌才能写。
-    // 旧会话可能只有 eat_admin 标记、没有令牌 → 视为未登录，强制重新输口令，避免后续写操作全部 401。
+    // 本地 eat_admin 标记可以被任何用户手搓伪造，因此这里必须经后端校验令牌
+    // 确实是管理员令牌（stats 仅管理员可读）：校验失败一律清会话回到登录门。
     const tok = uni.getStorageSync(request.ADMIN_TOKEN_KEY)
-    this.isAdmin = uni.getStorageSync('eat_admin') === '1' && !!tok
-    if (!this.isAdmin) {
-      uni.removeStorageSync('eat_admin')
-      uni.removeStorageSync('eat_admin_uid')
-      this.curAdminId = 0
-    } else {
-      // 读当前 admin 的 uid（后端 admin_login 返回；用于自降级/自删按钮置灰）
-      this.curAdminId = Number(uni.getStorageSync('eat_admin_uid') || 0)
-      this.loadAll()
+    if (!(uni.getStorageSync('eat_admin') === '1' && !!tok)) {
+      this._resetAdminSession()
+      this.isAdmin = false
+      return
     }
+    adminApi.stats()
+      .then(() => {
+        this.isAdmin = true
+        // 读当前 admin 的 uid（后端 admin_login 返回；用于自降级/自删按钮置灰）
+        this.curAdminId = Number(uni.getStorageSync('eat_admin_uid') || 0)
+        this.loadAll()
+      })
+      .catch(() => {
+        this._resetAdminSession()
+        this.isAdmin = false
+      })
   },
   methods: {
+    _resetAdminSession() {
+      uni.removeStorageSync('eat_admin')
+      uni.removeStorageSync(request.ADMIN_TOKEN_KEY)
+      uni.removeStorageSync('eat_admin_uid')
+      this.curAdminId = 0
+    },
+
     // 根据大类名称查 icon（emoji），查不到回退 🥗
     catIcon(catName) {
       const c = this.cats.find((c) => c.name === catName)

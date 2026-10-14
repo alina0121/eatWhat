@@ -8,7 +8,7 @@
 
 ing 元素结构：{name, qty, unit}  —— 食材名、用量、单位。
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlite3 import Connection
@@ -16,7 +16,7 @@ from sqlite3 import Connection
 from app.vip import check_quota
 
 from app.db import get_db, jdump, jload, row_to_dict
-from app.routers.auth import get_optional_user, get_write_user
+from app.routers.auth import get_optional_user, get_write_user, is_admin
 from app.routers.candidates import _subtract_subs
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
@@ -121,9 +121,12 @@ def _check_name_unique(conn: Connection, name: str, user: int,
 
 @router.post("")
 def create_recipe(body: RecipeIn,
+                  request: Request,
                   user: int = Depends(get_write_user),
                   conn: Connection = Depends(get_db)):
-    """新建菜谱（默认我的菜谱；写 source=admin 即录入参考菜谱）。"""
+    """新建菜谱（默认我的菜谱；source=admin 即录入参考菜谱，仅管理员）。"""
+    if body.source == "admin" and not is_admin(request, conn):
+        raise HTTPException(403, "参考菜谱仅管理员可录入")
     if body.source == "my" and _check_name_unique(conn, body.name, user):
         raise HTTPException(409, "我的菜谱已存在同名，请换个菜名")
     if body.source == "my":
@@ -149,10 +152,13 @@ def get_recipe(rid: int,
 
 @router.put("/{rid}")
 def update_recipe(rid: int, body: RecipePatch,
+                  request: Request,
                   user: int = Depends(get_write_user),
                   conn: Connection = Depends(get_db)):
-    """编辑菜谱。参考菜谱（source=admin）由管理端编辑，同样放行；名称唯一校验仅针对我的菜谱。"""
+    """编辑菜谱。参考菜谱（source=admin）仅管理员可改；我的菜谱仅作者本人。"""
     rec = _get_owned(conn, rid, user)
+    if rec["source"] == "admin" and not is_admin(request, conn):
+        raise HTTPException(403, "参考菜谱仅管理员可修改")
     data = body.model_dump(exclude_none=True)
     if "name" in data and data["name"] != rec["name"]:
         if _check_name_unique(conn, data["name"], user, exclude_id=rid):
@@ -174,15 +180,18 @@ def update_recipe(rid: int, body: RecipePatch,
 
 @router.delete("/{rid}")
 def delete_recipe(rid: int,
+                  request: Request,
                   user: int = Depends(get_write_user),
                   conn: Connection = Depends(get_db)):
-    """删除菜谱（我的或参考菜谱均可，由管理端对 admin 源操作）。
+    """删除菜谱（我的删自己的；参考菜谱仅管理员可删）。
 
     若该菜谱已在「吃这些」候选里，一并清理：回退其代入的待采购量
     （复用候选回退逻辑）并删除候选与计时，保持 COOK 一致。
     候选与待采购都按 user_id 隔离，只清理当前用户自己的那份。
     """
-    _get_owned(conn, rid, user)
+    rec = _get_owned(conn, rid, user)
+    if rec["source"] == "admin" and not is_admin(request, conn):
+        raise HTTPException(403, "参考菜谱仅管理员可删除")
     # 清理关联候选：先回退代入的待采购，再删候选与计时
     cand = conn.execute(
         "SELECT * FROM eat_inbox WHERE kind='recipe' AND ref_id=? AND user_id=?",

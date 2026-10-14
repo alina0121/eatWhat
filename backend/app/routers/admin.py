@@ -16,7 +16,7 @@ from sqlite3 import Connection
 
 from app.db import get_db, row_to_dict
 from app.routers.configs import get_config
-from app.routers.auth import sign_token, get_write_user
+from app.routers.auth import sign_token, get_admin_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -53,8 +53,8 @@ def admin_login(body: LoginIn, conn: Connection = Depends(get_db)):
 
 
 @router.get("/stats")
-def admin_stats(conn: Connection = Depends(get_db)):
-    """公共资源计数（不含任何个人数据）。"""
+def admin_stats(conn: Connection = Depends(get_db), _admin: int = Depends(get_admin_user)):
+    """公共资源计数（不含任何个人数据）。仅管理员可读。"""
     def cnt(sql, *args):
         return conn.execute(sql, args).fetchone()[0]
 
@@ -78,14 +78,14 @@ def _get_user(conn: Connection, uid: int):
 
 
 @router.get("/users")
-def list_users(conn: Connection = Depends(get_db)):
-    """用户列表。"""
+def list_users(conn: Connection = Depends(get_db), _admin: int = Depends(get_admin_user)):
+    """用户列表。仅管理员可读（含邮箱等敏感字段，绝不能裸奔）。"""
     rows = conn.execute("SELECT * FROM users ORDER BY id").fetchall()
     return [row_to_dict(r) for r in rows]
 
 
 @router.post("/users")
-def create_user(body: UserIn, conn: Connection = Depends(get_db), _admin: int = Depends(get_write_user)):
+def create_user(body: UserIn, conn: Connection = Depends(get_db), _admin: int = Depends(get_admin_user)):
     """新增用户。"""
     name = body.name.strip()
     if not name:
@@ -102,7 +102,7 @@ def create_user(body: UserIn, conn: Connection = Depends(get_db), _admin: int = 
 
 @router.put("/users/{uid}")
 def update_user(uid: int, body: UserPatch, conn: Connection = Depends(get_db),
-                _admin: int = Depends(get_write_user)):
+                _admin: int = Depends(get_admin_user)):
     """改名 / 切换角色。
 
     安全规则：
@@ -144,7 +144,7 @@ def update_user(uid: int, body: UserPatch, conn: Connection = Depends(get_db),
 
 @router.delete("/users/{uid}")
 def delete_user(uid: int, conn: Connection = Depends(get_db),
-                _admin: int = Depends(get_write_user)):
+                _admin: int = Depends(get_admin_user)):
     """删除用户。
 
     安全规则：
@@ -171,7 +171,7 @@ class VipGrant(BaseModel):
 
 @router.get("/vip")
 def admin_vip(conn: Connection = Depends(get_db),
-              _admin: int = Depends(get_write_user)):
+              _admin: int = Depends(get_admin_user)):
     """会员总览：KPI + 会员列表（含过期）+ 最近订单流水。"""
     import time as _t
     now = int(_t.time())
@@ -198,7 +198,7 @@ def admin_vip(conn: Connection = Depends(get_db),
 
 @router.post("/vip/grant")
 def admin_vip_grant(body: VipGrant, conn: Connection = Depends(get_db),
-                    _admin: int = Depends(get_write_user)):
+                    _admin: int = Depends(get_admin_user)):
     """手工赠送会员（客服补单/赔付用）：从当前到期起叠加 days 天。"""
     if body.days <= 0 or body.days > 3650:
         raise HTTPException(422, "天数需在 1~3650 之间")
@@ -210,7 +210,7 @@ def admin_vip_grant(body: VipGrant, conn: Connection = Depends(get_db),
 
 @router.post("/vip/revoke")
 def admin_vip_revoke(body: VipGrant, conn: Connection = Depends(get_db),
-                     _admin: int = Depends(get_write_user)):
+                     _admin: int = Depends(get_admin_user)):
     """取消会员：到期时间清零（即时失效；订单流水保留不删，留痕）。"""
     _get_user(conn, body.user_id)
     conn.execute("UPDATE vip_members SET expires_at=0, updated_at=0 WHERE user_id=?", (body.user_id,))

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlite3 import Connection
 
 from app.db import get_db
-from .auth import get_write_user, _admin_uid
+from .auth import get_admin_user, _admin_uid
 
 router = APIRouter(prefix="/configs", tags=["configs"])
 
@@ -68,15 +68,13 @@ def get_one(key: str, request: Request, conn: Connection = Depends(get_db)):
 
 
 @router.put("/{key}")
-def update_config(key: str, body: ConfigIn, request: Request,
+def update_config(key: str, body: ConfigIn,
                   conn: Connection = Depends(get_db),
-                  _user: int = Depends(get_write_user)):
-    """写单个配置（新增或更新）。
+                  _admin: int = Depends(get_admin_user)):
+    """写单个配置（新增或更新）。仅管理员可写。
 
-    普通登录用户只能改非敏感配置；会员/支付/口令/密钥类配置必须持管理台令牌
-    （X-Admin-Token）——否则任何登录用户都能自助改免费额度给自己发会员。
+    配置影响全局（审核开关/图标池/SMTP/口令/会员额度...），移动端没有任何
+    普通用户需要写配置的场景 —— 一律要求管理员（管理台令牌或 role=admin）。
     """
-    if key in ADMIN_ONLY_KEYS and _admin_uid(request, conn) is None:
-        raise HTTPException(403, "该配置仅管理员可修改")
     set_config(conn, key, body.value)
     return {"key": key, "value": body.value, "ok": True}

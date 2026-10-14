@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlite3 import Connection
 
 from app.db import get_db, row_to_dict
-from app.routers.auth import get_optional_user, get_write_user
+from app.routers.auth import get_optional_user, get_write_user, get_admin_user
 from app.routers.configs import get_config
 from app.wxsec import check_text
 from app.vip import check_quota
@@ -141,8 +141,8 @@ def delete_tip(tid: int,
 # ---------------------------------------------------------------------------
 @router.post("/{tid}/approve")
 def approve_tip(tid: int, conn: Connection = Depends(get_db),
-                _admin: int = Depends(get_write_user)):
-    """管理员通过 → approved，公开展示。"""
+                _admin: int = Depends(get_admin_user)):
+    """管理员通过 → approved，公开展示。仅管理员可操作。"""
     _get(conn, tid)
     conn.execute("UPDATE tips SET status='approved', updated_at=datetime('now','localtime') WHERE id=?", (tid,))
     return {"id": tid, "status": "approved", "ok": True}
@@ -150,8 +150,8 @@ def approve_tip(tid: int, conn: Connection = Depends(get_db),
 
 @router.post("/{tid}/reject")
 def reject_tip(tid: int, conn: Connection = Depends(get_db),
-               _admin: int = Depends(get_write_user)):
-    """管理员退回 → rejected，仅作者可见。"""
+               _admin: int = Depends(get_admin_user)):
+    """管理员退回 → rejected，仅作者可见。仅管理员可操作。"""
     _get(conn, tid)
     conn.execute("UPDATE tips SET status='rejected', updated_at=datetime('now','localtime') WHERE id=?", (tid,))
     return {"id": tid, "status": "rejected", "ok": True}

@@ -141,6 +141,39 @@ def _admin_uid(request: Request, conn) -> Optional[int]:
     return None
 
 
+async def get_admin_user(request: Request, conn=Depends(get_conn)) -> int:
+    """管理端鉴权：管理台令牌（X-Admin-Token）或 role=admin 的用户 token，二选一。
+
+    与 get_write_user 的区别：write 只要求「是个登录用户」，admin 要求「确实是管理员」。
+    管理端所有读写（用户管理/配置/审核/参考菜谱/会员）必须用这个，否则任何注册用户
+    都能提权改公共数据。
+    """
+    auid = _admin_uid(request, conn)
+    if auid is not None:
+        return auid
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        uid = verify_token(conn, auth[7:])
+        if uid is not None and _user_exists(conn, uid):
+            row = conn.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()
+            if row and row["role"] == "admin":
+                return uid
+    raise HTTPException(403, "需要管理员权限")
+
+
+def is_admin(request: Request, conn) -> bool:
+    """同步版管理员判定（供按请求体内容分支的接口内联调用，如参考菜谱 source=admin）。"""
+    if _admin_uid(request, conn) is not None:
+        return True
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        uid = verify_token(conn, auth[7:])
+        if uid is not None and _user_exists(conn, uid):
+            row = conn.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()
+            return bool(row and row["role"] == "admin")
+    return False
+
+
 async def get_write_user(request: Request, conn=Depends(get_conn)) -> int:
     """写操作依赖：必须已登录（用户 token），或持有效管理台令牌。
 

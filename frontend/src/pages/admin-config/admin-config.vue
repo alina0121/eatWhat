@@ -187,7 +187,7 @@
 </template>
 
 <script>
-import { configApi } from '@/api'
+import { configApi, adminApi } from '@/api'
 import request from '@/utils/request'
 
 export default {
@@ -224,18 +224,26 @@ export default {
     },
   },
   onLoad() {
-    // 管理台专属页：必须持有有效 admin token 才能继续
+    // 管理台专属页：必须持有有效 admin token 才能继续。
+    // 本地标记可伪造，统一以后端校验为准（stats 仅管理员可读），失败弹回登录门。
     const hasAdmin = uni.getStorageSync('eat_admin') === '1'
     const hasToken = !!uni.getStorageSync(request.ADMIN_TOKEN_KEY)
     if (!hasAdmin || !hasToken) {
-      uni.showToast({ title: '请先在管理台登录', icon: 'none' })
-      setTimeout(() => uni.reLaunch({ url: '/pages/admin/admin' }), 600)
+      this._kickBack()
       return
     }
-    this._ok = true
-    this.load()
+    adminApi.stats()
+      .then(() => { this._ok = true; this.load() })
+      .catch(() => this._kickBack())
   },
   methods: {
+    _kickBack() {
+      uni.removeStorageSync('eat_admin')
+      uni.removeStorageSync(request.ADMIN_TOKEN_KEY)
+      uni.showToast({ title: '请先在管理台登录', icon: 'none' })
+      setTimeout(() => uni.reLaunch({ url: '/pages/admin/admin' }), 600)
+    },
+
     back() { uni.navigateBack() },
 
     splitIcons(v) {
